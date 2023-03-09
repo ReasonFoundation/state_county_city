@@ -1,0 +1,143 @@
+---
+title: "Untitled"
+output: html_document
+date: "2023-02-28"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+ The below use file cities.csv --> not sustainable --> redo above
+```{r}
+# Some cities are counties --> get from list of 100 cities
+cities <- read.csv("cities.csv") %>% 
+select(-c(lat, long, X)) %>% rename(name = city, # to match with colnames in counties file
+                                 revenue = revenues) 
+
+##Jacksonville city, FL  = Duval County, FL 
+# copy the data for Jacksonville city, FL to a new row in the County data for Duval County, FL
+
+jacksonville_duval <- cities %>% 
+filter(state_abv == "FL" & name == "Jacksonville") %>% 
+mutate(percapita = total_liabilities/population,
+ # adding FIPS code manually
+      FIPS = "12031", # got it here https://www.census.gov/quickfacts/fact/table/duvalcountyflorida,US/PST045221
+      name = ifelse(name == "Jacksonville", "Duval County", name))
+
+## San Francisco city, CA = San Francisco County, CA
+sanfrancisco <- cities %>% 
+filter(state_abv == "CA" & name == "San Francisco") %>% 
+  mutate(percapita = total_liabilities/population, 
+         FIPS = "06075",
+         name = ifelse(name == "San Francisco", "San Francisco County", name))
+
+```
+
+
+```{r}
+#Denver, CO
+denver <- cities  %>% 
+filter(state_abv == "CO" & name == "Denver") %>% 
+  mutate(percapita = total_liabilities/population, 
+         FIPS = "08031", 
+         name = ifelse(name == "Denver", "Denver County", name)) 
+
+```
+
+
+```{r}
+#Philadelphia, PA
+philadelphia <- cities %>% 
+filter(state_abv == "PA" & name == "Philadelphia") %>% 
+  mutate(percapita = total_liabilities/population, 
+         FIPS = "42101", 
+         name = ifelse(name == "Philadelphia", "Philadelphia County", name))
+```
+
+```{r}
+#Indianapolis-Marion County, Indiana
+indianapolis_marion <- cities %>% 
+filter(state_abv == "IN" & name == "Indianapolis") %>% 
+  mutate(percapita = total_liabilities/population, 
+         FIPS = "1836003", # Indianapolis city (balance), Indiana
+         name = ifelse(name == "Indianapolis", "Indianapolis-Marion County", ""))
+```
+
+
+
+# List of counties in Census data with > 100k population  
+
+```{r}
+# stoplist
+
+# stoplist1 <-  pop %>% 
+#   filter(state.name == "New York" & county %in% c("Bronx County", "Richmond County", "Kings County", "Queens County", "New York County"))
+#   
+# stoplist2 <- pop %>% 
+#   filter(state.name == "Florida" & county == "Duval County") # FL Duval County's government is combined with FL Jacksonville,
+# 
+# stoplist3 <- pop %>% 
+#     filter(state.name == "Tennessee" & county == "Davidson County") 
+#     
+# stoplist4 <-  pop %>% 
+#   filter(state.name == "Kentucky" & county == "Jefferson County")
+# 
+# stoplist5 <- pop %>% 
+#     filter(state.name == "Ohio" & county == "Franklin County")
+#   
+# stoplist <- rbind(stoplist1, stoplist2, stoplist3, stoplist4, stoplist5)
+# 
+# # get counties in Census population data that have > 100k pop, county level, not Connecticut, not in stoplist
+# 
+# census_pop_100k <- pop %>% 
+#   # counties with > 100k  pop in Census
+#   filter(population > 100000) %>% 
+#   
+#   # only get county level 
+#   filter(grepl("County|Parish", county)) %>%  # how about |Borough?
+#   filter(state.name != "Connecticut") %>% 
+#   filter(!id %in% stoplist$id) 
+
+```
+
+## Counties in Census with > 100k population above that are not yet matched with ACFRs
+
+```{r}
+# census_pop_NOT_match_acfrs_100k <- census_pop_100k %>% 
+#   filter(!id %in% county_pop_census_acfrs$id ) %>% arrange(desc(population)) %>% distinct()
+#write.csv(census_pop_NOT_match_acfrs_100k, "census_pop_NOT_match_acfrs_100k.csv")
+```
+
+There are `r nrow(census_pop_NOT_match_acfrs_100k)` counties in Census with more than 100k population that are not yet matched with ACFRs. 
+
+## All counties in Census, regardless of population size, that are not yet matched with ACFRs
+
+county_pop_census_acfrs
+
+```{r}
+# census_pop_NOT_match_acfrs_all <- pop %>% 
+# 
+#   # only get county level 
+#   filter(grepl("County|Parish", county)) %>%  # how about |Borough?
+#   filter(state.name != "Connecticut") %>%
+#   filter(!id %in% stoplist$id) %>% 
+#   filter(!id %in% county_pop_census_acfrs$id) %>% arrange(desc(population))
+
+#write.csv(census_pop_NOT_match_acfrs_all, "census_pop_NOT_match_acfrs_all.csv")
+```
+
+There are `r nrow(census_pop_NOT_match_acfrs_all)` counties in Census, regardless of population size, that are not yet matched with ACFRs. 
+
+```{r}
+#++++++++
+#Note: the below match is NOT accurate: it will filter out counties whose names appear in county_pop_census_acfrs. 
+#Some states have counties with the same name. 
+# Eg. this code will filter out "Kings County", both CA and NY. 
+# WHile Kings County NY is not in ACFRs, Kings County CA is. 
+
+#  filter(!county %in% county_pop_census_acfrs$county) %>% distinct()
+#+++++++++
+```
+
+

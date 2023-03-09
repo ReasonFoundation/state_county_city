@@ -1,0 +1,255 @@
+---
+title: "Adding Census Population to ACFRs Data at City and Town Level"
+output: 
+  html_document:
+    toc: TRUE
+    toc_float: TRUE
+    toc_depth: 3
+    number_sections: true
+---
+
+```{r setup, include=FALSE, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE)
+options(scipen = 999)
+library(tidyverse)
+library(dplyr)
+library(DT)
+```
+# Tasks 
+
+*City names in Acfrs database are not obvious, i.e., does not contain a certain word to indicate it's a city
+
+*The [census population data use GEOIDs](https://www.census.gov/programs-surveys/geography/guidance/geo-identifiers.html#:~:text=The%20full%20GEOID%20for%20many,codes%2C%20in%20which%20they%20nest.), which are "numeric codes that uniquely identify all administrative/legal and statistical geographic areas for which the Census Bureau tabulates data". 
+
+
+*ACFRs data has government_id (which is called census_id in the ACFRs portal), but not geo_id. 
+
+*Use a "middle file" to link geo_id and government_ID
+
+*Need to a) identify city and towns in census population data and b) link those to corresponding acfrs entities. 
+
+# Census Polulation - Cities and Towns
+
+List of cities and towns with geo_id. 
+
+```{r}
+#Marc emailed this data Feb2 2022: using 017 Census master file data to map to the 2020 Census Population data using FIPS Codes. GEO_ID: Census identifiers that point to population of places in US
+geoID_pop20_census <- rio::import(here::here("data", "City and Town Mapping.xlsx"), sheet = 2) %>% 
+rename(population = `!!Total:`, 
+       geo_id = GEO_ID) 
+
+# join with df_state to get state.abb and state.name --> to have a common col with acfrs to join later
+df_state <- data.frame(state.abb, state.name) %>% 
+  add_row(state.abb = "DC", state.name = "District of Columbia")
+
+
+pop <- geoID_pop20_census %>% 
+  separate(NAME, c("city_town", "state.name"), sep = ",")  %>%  
+  mutate(state.name = str_trim(state.name), 
+         city_town = str_trim(city_town)) %>% 
+  left_join(df_state) %>% drop_na()
+
+datatable(pop)
+
+```
+
+There are `r nrow(pop)` observations in this data set. 
+
+## Linking government_ID and geo_id
+
+ACFRs database uses government ID (enumeration ID of local governments), but do not have geo_id. 
+
+We use a Census master file data to map ACFRs to the 2020 Census Population data by FIPS Codes.
+
+```{r}
+#government_ID (used in ACFRs): enumeration ID of local governments. ACFRs data does not use FIP codes 
+# Note that population data is ACFRs portal is 2017 -> don't use
+# Note: census_id, which means government_id in Acfrs are numeric --> can be turn to scientific notation in R --> will not match --> need to avoid scientific notation. 
+
+# This has both government_ID and geo_id
+governmentID <- rio::import(here::here("data", "City and Town Mapping.xlsx"), sheet = 3) %>% 
+  select(government_ID, `INFERRED GEO_ID`, NAME, CITY, STATE_AB, COUNTY_AREA_NAME)  %>% 
+  rename(geo_id = `INFERRED GEO_ID`,  # Marc created INFERRED GEO_ID, which meant to be geo_id
+         original_name = NAME)   
+  
+# Use governmentID to join with population
+pop_governmentID <- pop %>% 
+  left_join(governmentID) %>% drop_na(government_ID)
+
+datatable(pop_governmentID %>% select(geo_id, government_ID, city_town, population))
+```
+
+# City and Towns
+
+*Get all general purpose entities in acfrs 
+
+*Join above acfrs entities with dataset of city and town population data that has governmentID
+
+```{r}
+# census_id in ACFRs is government_ID used in file "City and Town Mapping.xlsx"
+
+# 1. get all general purpose entities in acfrs
+acfrs_governmentID <- readRDS("data/data_from_dbsite_2020.RDS") %>% 
+  filter(category == "General Purpose") %>% 
+  rename(government_ID = census_id) %>% 
+
+# problem: government_ID in pop_governmentID has 14 characters (05201902700000) >< some government_ID in ACFRs has 13 characters 5201902700000 --> Marc: Yes, it is safe to assume that these government_ID in ACFRs data should have 0 at the beginning.
+  mutate(government_ID = ifelse(str_length(government_ID) < 14, paste0("0", government_ID), government_ID)) 
+
+
+# 2. join with city and town population data that has governmentID
+acfrs_city_pop <- acfrs_governmentID %>% 
+  left_join(pop_governmentID) %>% 
+  select(-c(state, STATE_AB, year)) %>% 
+  arrange(desc(population)) %>% 
+  drop_na(population)
+
+datatable(acfrs_city_pop)
+```
+At this point Acfrs now has `r nrow(acfrs_governmentID)` general purpose entities FY 2020, of which 6810 are cities and towns. 
+
+## Checking for overlapping 
+
+Check if there's any overlapping between the above lists
+
+```{r}
+# all general purpose entities: 11187
+length(unique(acfrs_governmentID$government_ID)) 
+
+unique(acfrs_governmentID$government_ID) -> t1
+
+# cities and towns: 6810
+length(unique(acfrs_city_pop$government_ID)) 
+unique(acfrs_city_pop$government_ID) ->t2
+
+# gap bw the 2 above: 4377
+length(unique(setdiff(t1, t2)))
+
+# list of counties (in count_gov.Rmd): 2569
+county_pop_census_acfrs <- readRDS("county_pop_census_acfrs.RDS")
+length(unique(county_pop_census_acfrs$census_id))
+unique(county_pop_census_acfrs$census_id) ->t3
+
+# entities overlapping  between city list and county list
+
+intersect(t2, t3) -> intersect_city_county
+
+# view the overlapping cities 
+acfrs_city_pop %>% filter(government_ID %in% intersect_city_county) %>% 
+ select(name, government_ID)
+
+```
+Those whose names contain parentheses are actually cities. The part in side the parentheses indicates which county they belong to. 
+
+
+## Final City and County List
+
+```{r}
+state_gov <-readRDS("state_gov.RDS")
+
+# composition of city, county, state gov in general purpose
+ # acfrs_governmentID %>% 
+ #  left_join(pop_governmentID) %>% #drop_na(population) %>% 
+ #  select(-c(state, STATE_AB, year)) %>% 
+ #  arrange(desc(population)) %>% 
+
+# take out county 2569
+# filter(!government_ID %in% county_pop_census_acfrs$census_id) %>% 
+#    filter(!id %in% state_gov$id)
+   
+```
+
+
+
+Lastly, take 15 who are actually counties out of the cities list. 
+```{r}
+# actually county
+  acfrs_city_pop %>% filter(government_ID %in% intersect_city_county) %>% 
+  filter(!grepl("\\)", name)) -> actual_county
+
+acfrs_city_pop_final <- acfrs_city_pop %>% 
+  filter(!government_ID %in% actual_county$government_ID) 
+
+datatable(acfrs_city_pop_final)
+ saveRDS(acfrs_city_pop_final, "acfrs_city_pop.RDS")
+```
+
+The list of city and county contains `r nrow(acfrs_city_pop_final)` entities. 
+
+Another approach: 
+
+Subtract all states and counties from general purpose
+
+```{r}
+state_gov <- readRDS("state_gov.RDS")
+counties <- readRDS("counties.RDS") 
+
+gen_purpose <- readRDS("data/data_from_dbsite_2020.RDS") %>% 
+  filter(category == "General Purpose")  
+  
+gen_purpose %>% 
+  mutate(id = as.character(id)) %>% 
+  # take out state gov
+  filter(!id %in% state_gov$id) %>% 
+  
+  # take out county %>% 
+  filter(!id %in% counties$id.x)
+  
+
+  
+  # check id in city and county
+
+length(setdiff(acfrs_city_pop_final$id, counties$id.x))
+
+#over lapping city and county
+length(intersect(acfrs_city_pop_final$id, counties$id))
+  
+```
+
+```{r}
+nrow(counties)
+slices <- c(51, nrow(counties), nrow(gen_purpose) - nrow(counties))
+lbls <- c("state", "county", "city and township")
+
+lbls <- paste(lbls,":", slices, "entities")
+pie(slices, labels = lbls, main="Share of entities in General Purpose")
+
+```
+
+
+```{r}
+slices <- c(51, nrow(counties), nrow(acfrs_city_pop_final), nrow(gen_purpose) - nrow(counties)-nrow(acfrs_city_pop_final))
+lbls <- c("state", "county", "city and township \nwith pop data", "city and township \nw/o pop data")
+
+lbls <- paste(lbls,":", slices, "entities")
+pie(slices, labels = lbls, main="Share of entities in General Purpose with \nand w/o population data")
+```
+
+```{r}
+# general purpose w/o pop data:
+gen_purpose %>% 
+  filter(!id %in% state_gov$id) %>% 
+  filter(!id %in% counties$id.x) %>% 
+  filter(!id %in% acfrs_city_pop_final$id) %>% 
+  
+  # 
+   # filter(total_liabilities > 500000000) %>% # 33 entities is 5 hundred mil a resonable cut? Using total or using net_pension
+   # arrange(desc(total_liabilities))
+
+# Using total or using net_pension
+  arrange(desc(net_pension_liability)) %>% 
+  filter(net_pension_liability > 100000000) # 42
+
+
+# using both: 
+
+  filter(total_liabilities > 500000000 & net_pension_liability > 100000000) # 23 total_lia more than 500 mil & net pen sion more than 100 mil
+  
+
+# Manually adding population data to entities with total_liability greater than 500 mil
+
+  
+  
+  
+```
+

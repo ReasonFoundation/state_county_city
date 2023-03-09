@@ -1,0 +1,51 @@
+---
+title: "State Government ACFRs"
+output: html_document
+date: '2022-08-15'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(stringr)
+library(tidyr)
+library(dplyr)
+library(DT)
+```
+
+# Tasks: 
+1. Filter state governments from ACFRs data
+2. Merge state government ACFRs with Census population 2020 
+
+Population from Census here:
+https://www.census.gov/programs-surveys/popest/technical-documentation/research/evaluation-estimates/2020-evaluation-estimates/2010s-state-detail.html
+
+State governments ACFRs are named by one of these ways: "State of", "Commonwealth of", "Government of the","District of Columbia".
+```{r warning=FALSE, message=FALSE}
+states_population <- rio::import("data/states_population2020_census.xlsx", skip = 8) %>% select(1:2) %>% 
+  rename(name = West,
+         population = "78654756") %>% 
+  mutate(name = str_remove(name, ".")) %>% slice(1:51)
+
+# All 51 state governments 
+state_gov <- readRDS("data/data_from_dbsite_2020.RDS") %>% 
+  filter(category == "General Purpose") %>% 
+  
+  # only filter for state governments
+  filter(str_detect(name, "State of|Commonwealth|District of Columbia")) %>% 
+  filter(!str_detect(name, "Yap|Kosrae")) %>% 
+  
+  #clean state names to match with those names in census population data 
+  mutate(name = str_remove(name, "State of "),
+        name = str_remove(name, "Commonwealth of "),
+        name = str_remove(name, "Government of the ")) %>% 
+  left_join(states_population) %>% 
+  select(-c(year, has_unconfirmed)) %>% 
+  filter(!name %in% c("Iowa Single Audit Report", "Puerto Rico"))
+```
+
+```{r}
+saveRDS(state_gov, "state_gov.RDS")
+datatable(state_gov)
+```
+
