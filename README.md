@@ -6,7 +6,7 @@ county_gov.Rmd
 ## City Government
 city_gov.Rmd
 
-
+## Change in database:
 Based on this method of subcategorization, Ron Hayden then added boolean values: 
 
 is_city = models.BooleanField(default=False)
