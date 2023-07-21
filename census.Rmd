@@ -1,0 +1,38 @@
+---
+title: "Untitled"
+output: html_document
+date: "2023-06-05"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(stringr)
+library(dplyr)
+```
+
+```{r}
+readxl::read_xlsx("data/all-geocodes-v2020.xlsx", skip = 4) %>% 
+  select(2, 3, 7) %>% 
+  rename(state_code = `State Code (FIPS)`,
+         county_code = `County Code (FIPS)`,
+         area_name = `Area Name (including legal/statistical area description)`) %>% 
+  filter(county_code != "000") %>% 
+    mutate(state_county_code = paste0(state_code, county_code)) %>% select(3, 4) %>% 
+  distinct(state_county_code) -> list_county_code
+
+
+readxl::read_xlsx("data/all-geocodes-v2020.xlsx", skip = 4) %>% 
+  select(2, 3, 7) %>% 
+  rename(state_code = `State Code (FIPS)`,
+         county_code = `County Code (FIPS)`,
+         area_name = `Area Name (including legal/statistical area description)`) %>% 
+    mutate(state_county_code = paste0(state_code, county_code)) %>% 
+  
+  
+  filter(str_detect(area_name, "County|Borough|Parish")) %>% select(3,4) 
+
+
+setdiff(list_county_code$state_county_code, list_county_name$state_county_code)
+```
+

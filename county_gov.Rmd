@@ -21,6 +21,17 @@ library(dplyr)
 # Get County Population from Census 
 
 ```{r}
+#https://www2.census.gov/programs-surveys/popest/datasets/2020-2022/counties/totals/
+census_county_2020 <- rio::import(here::here("data", "co-est2022-alldata.csv")) %>% 
+  select(STATE, COUNTY, STNAME, CTYNAME, ESTIMATESBASE2020) %>% 
+  filter(COUNTY != 0,
+         CTYNAME != "District of Columbia")
+
+census_county_2020 %>% 
+  filter(str_detect(STNAME, "Louisiana"))
+```
+
+```{r}
 d_county <- rio::import(here::here("data", "DECENNIALPL2020.P1_data_with_overlays_2021-12-16T123049.csv"), skip = 1) %>% 
   select(id, `Geographic Area Name`, `!!Total:`) %>% 
   rename(population = `!!Total:`)
@@ -57,6 +68,8 @@ mutate(county = ifelse(county == "louisville/jefferson county metro government (
 # # recheck special cases: 
 # pop %>% 
 #   filter(str_detect(county, "nashville-davidson|louisville-jefferson|kauai county"))
+
+all_counties <- pop_county %>% select(state.name, id, county, population) %>% distinct() %>% filter(str_detect(county, "county"))
 ```
 
 There are `r nrow(pop_county)` observations in census population data.
@@ -204,9 +217,10 @@ counties_1 <- county_pop_census_acfrs %>%
   rename(FIPS = id.y, 
          name = county) %>%
   
-  mutate(FIPS = str_sub(FIPS, -5, -1)) %>% 
+  mutate(FIPS = str_sub(FIPS, -5, -1)) %>% # FIPs is position last 5 to last
   arrange(desc(population)) %>% 
-  select(FIPS, state.name, name, population, total_liabilities, revenues, lib_rev_ratio, lib_per_capita, state.abb) %>% arrange(desc(population)) 
+  rename(id = id.x) %>% 
+  select(id, FIPS, state.name, name, population, total_liabilities, revenues, lib_rev_ratio, lib_per_capita, state.abb) %>% arrange(desc(population)) 
 
 ```
 
@@ -261,26 +275,28 @@ indianapolis_marion <- acfrs_city_pop %>%
 filter(state.abb == "IN" & name == "Indianapolis") %>% 
   mutate(FIPS = "1836003", # Indianapolis city (balance), Indiana
          name = "Indianapolis-Marion County")
+
 ```
 
 
 ```{r}
 # Rbind the special cases
-counties <- rbind(jacksonville_duval, 
+acfrs_counties <- rbind(jacksonville_duval, 
                   sanfrancisco,
                   denver,
                   philadelphia,
                   indianapolis_marion) %>% 
+  #mutate(id.x = NA) %>% 
   mutate(lib_rev_ratio = (total_liabilities/revenues)*100,
          lib_per_capita = total_liabilities/population) %>% 
-  select(FIPS, state.name, name, population, total_liabilities, revenues, lib_rev_ratio, lib_per_capita, state.abb) %>% 
+  select(id, FIPS, state.name, name, population, total_liabilities, revenues, lib_rev_ratio, lib_per_capita, state.abb) %>% 
 
 # rbind to the rest of counties
   rbind(counties_1)
   
   
 #re check all special cases: 
-counties  %>% 
+acfrs_counties  %>% 
   filter(name == "Duval County" |
                       name == "San Francisco County" |
                       #name == "Denver County" |
@@ -292,9 +308,57 @@ counties  %>%
   filter(state.name != "Texas") # not Duval in TX
 
 # check other cases if they all have pop data: Kaua‘i County, HI; Dekalb County, AL; Desoto County, FL; St Francis County, AR
-counties %>% 
+acfrs_counties %>% 
   filter(str_detect(name, "Kauai|Dekalb|Desoto|Francis"))
 
 saveRDS(counties, "counties.RDS")
 write.csv(counties, "counties.csv")
+
+
+acfrs_counties %>% arrange(desc(population)) %>% slice(1:10) -> top10_county
+#top10_county%>% write.csv("top_10_county_2020.csv")
+
+readRDS("data/data_from_dbsite_2021.RDS") %>% 
+  filter(id %in% top10_county$id) #%>% write.csv("top_10_county_2021.csv")
+
+
+all_counties <- all_counties %>% 
+  mutate(FIPS = str_extract(id, "US.*"),
+         FIPS = str_remove_all(FIPS, "US")
+         ) %>% 
+  filter(!str_detect(county, "cdp"))
+
+# check duplicated
+all_counties %>% select (FIPS) %>%  group_by_all() %>%
+  filter(n()>1) %>%
+  ungroup() 
+
 ```
+
+```{r}
+
+  ##
+Prop1 <- c(nrow(acfrs_counties), nrow(all_counties) - nrow(acfrs_counties))
+
+ pie(Prop1, labels = c(paste("Counties already \nin Acfrs database:", nrow(acfrs_counties)),
+                      paste("Counties being processed:", nrow(all_counties) - nrow(acfrs_counties))),
+     main = "Total # of counties: 3041")
+
+```
+
+```{r}
+# 
+all_counties  %>% #filter(!str_detect(county, "\\("))
+  filter(!FIPS %in% acfrs_counties$FIPS) %>%  
+  arrange(state.name, population) #%>%  write.csv("missing_counties.csv") 
+
+#used the missing_counties.csv above to manually track every county. Got this list
+rio::import(here::here("data", "Missing_counties_manual_checked.xlsx")) %>% #filter(is.na(notes)) 
+ filter(note == "")
+
+Prop2 <- c(170, 117, 294)
+
+ pie(Prop2, labels = c("Can't find: 170", "Small counties, Haven't searched: 117", "\nUploaded files\nBeing discussed\n No county government: 294"),
+     main = "Total # of counties being processed: 581")
+```
+

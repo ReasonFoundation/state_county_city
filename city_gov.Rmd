@@ -171,7 +171,18 @@ acfrs_city_pop_final <- acfrs_city_pop %>%
   filter(!government_ID %in% actual_county$government_ID) 
 
 datatable(acfrs_city_pop_final)
+
  saveRDS(acfrs_city_pop_final, "acfrs_city_pop.RDS")
+ 
+ acfrs_city_pop_final %>% arrange(desc(population)) %>% slice(1:10) -> top10_city_2020
+ top10_city_2020 %>% write.csv("top10_city_2020.csv")
+```
+
+
+```{r}
+# missing Philadelphia PA
+readRDS("data/data_from_dbsite_2021.RDS") %>% 
+   filter(id %in% top10_city_2020$id) %>% write.csv("top10_city_2021.csv")
 ```
 
 The list of city and county contains `r nrow(acfrs_city_pop_final)` entities. 
@@ -194,8 +205,6 @@ gen_purpose %>%
   
   # take out county %>% 
   filter(!id %in% counties$id.x)
-  
-
   
   # check id in city and county
 
@@ -231,25 +240,21 @@ gen_purpose %>%
   filter(!id %in% state_gov$id) %>% 
   filter(!id %in% counties$id.x) %>% 
   filter(!id %in% acfrs_city_pop_final$id) %>% 
-  
+  select(id, name, state, total_liabilities, net_pension_liability) %>% 
   # 
    # filter(total_liabilities > 500000000) %>% # 33 entities is 5 hundred mil a resonable cut? Using total or using net_pension
-   # arrange(desc(total_liabilities))
+   # arrange(desc(total_liabilities)) -> t_1
 
 # Using total or using net_pension
-  arrange(desc(net_pension_liability)) %>% 
-  filter(net_pension_liability > 100000000) # 42
-
+  # arrange(desc(net_pension_liability)) %>% 
+  # filter(net_pension_liability > 100000000) -> t_2# 42
 
 # using both: 
-
-  filter(total_liabilities > 500000000 & net_pension_liability > 100000000) # 23 total_lia more than 500 mil & net pen sion more than 100 mil
-  
+  filter(total_liabilities > 500000000 & net_pension_liability > 100000000) -> t_3 # 23 total_lia more than 500 mil & net pen sion more than 100 mil
 
 # Manually adding population data to entities with total_liability greater than 500 mil
-
-  
-  
-  
+  datatable(t_1)
 ```
+
+
 

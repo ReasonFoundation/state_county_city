@@ -141,3 +141,44 @@ There are `r nrow(census_pop_NOT_match_acfrs_all)` counties in Census, regardles
 ```
 
 
+```{r}
+library(hrbrthemes)
+library(GGally)
+library(viridis)
+
+# Data set is provided by R natively
+data <- iris
+```
+
+```{r}
+# Plot
+ggparcoord(data,
+    columns = 1:4, groupColumn = 5, order = "anyClass",
+    showPoints = TRUE, 
+    title = "Parallel Coordinate Plot for the Iris Data",
+    alphaLines = 0.3
+    ) + 
+  scale_color_viridis(discrete=TRUE) +
+  theme_ipsum()+
+  theme(
+    plot.title = element_text(size=10)
+  )
+```
+
+```{r}
+ggparcoord(data,
+    columns = 1:4, groupColumn = 5, order = "anyClass",
+    scale="globalminmax",
+    showPoints = TRUE, 
+    title = "No scaling",
+    alphaLines = 0.3
+    ) + 
+  scale_color_viridis(discrete=TRUE) +
+  theme_ipsum()+
+  theme(
+    legend.position="none",
+    plot.title = element_text(size=13)
+  ) +
+  xlab("")
+```
+

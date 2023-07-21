@@ -28,8 +28,8 @@ states_population <- rio::import("data/states_population2020_census.xlsx", skip 
   mutate(name = str_remove(name, ".")) %>% slice(1:51)
 
 # All 51 state governments 
-state_gov <- readRDS("data/data_from_dbsite_2020.RDS") %>% 
-  filter(category == "General Purpose") %>% 
+state_gov <- readRDS("data/data_from_dbsite_2020.RDS") %>% #filter(str_detect(name, "Commonwealth of Pen"))
+  filter(category == "General Purpose") %>% filter(str_detect(name, "Commonwealth"))
   
   # only filter for state governments
   filter(str_detect(name, "State of|Commonwealth|District of Columbia")) %>% 
@@ -47,5 +47,16 @@ state_gov <- readRDS("data/data_from_dbsite_2020.RDS") %>%
 ```{r}
 saveRDS(state_gov, "state_gov.RDS")
 datatable(state_gov)
+
+
+state_gov_2021 <- readRDS("data/data_from_dbsite_2021.RDS") %>% 
+  filter(id %in% state_gov$id)
+
+write.csv(state_gov, "state_gov.csv")
+write.csv(state_gov_2021, "state_gov_2021.csv")
 ```
 
+
+
+Note: 
+total_liabilities
