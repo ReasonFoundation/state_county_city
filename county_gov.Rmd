@@ -15,61 +15,46 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(stringr)
 library(dplyr)
-
+library(janitor)
 ```
 
-# Get County Population from Census 
+# County Population from Census 
 
 ```{r}
-#https://www2.census.gov/programs-surveys/popest/datasets/2020-2022/counties/totals/
-census_county_2020 <- rio::import(here::here("data", "co-est2022-alldata.csv")) %>% 
-  select(STATE, COUNTY, STNAME, CTYNAME, ESTIMATESBASE2020) %>% 
-  filter(COUNTY != 0,
-         CTYNAME != "District of Columbia")
+df_state <- data.frame(state.abb, state.name)
 
+census_county_2020 <-  rio::import(here::here("data", "sub-est2022.csv")) %>% 
+   clean_names() %>% 
+   filter(sumlev == 050) %>% 
+  rename(population = popestimate2020,
+           county_name = name,
+           county_code = county,
+           state.name = stname) %>% 
+  select(county_code, state.name, county_name, population) %>% 
+  filter(county_name != "District of Columbia") %>% 
+  mutate(county_name = str_to_lower(county_name),
+         county_name = str_remove(county_name,"\\.|'|‘")) %>% 
+      left_join(df_state) # to get state.abb to join with acfrs data later. 
+
+# Check special cases: 
 census_county_2020 %>% 
-  filter(str_detect(STNAME, "Louisiana"))
+  # 41 city entities categorized as county
+  filter(!str_detect(county_name, "(borough)|(county)|(parish)|(planning regio)|(census area)|(municipality)")) 
+# Note: Planning Regio, lacking "n" at last, to include all Planning Region in CT
+
+#Louisiana has 64 entities "Parish"
+# Alaska has 30 entities " 17 Borough", "Census Area", "Municipality"
+# Connecticut has 9 entities "Planning Region"
+
+nrow(census_county_2020)
 ```
 
 ```{r}
-d_county <- rio::import(here::here("data", "DECENNIALPL2020.P1_data_with_overlays_2021-12-16T123049.csv"), skip = 1) %>% 
-  select(id, `Geographic Area Name`, `!!Total:`) %>% 
-  rename(population = `!!Total:`)
-
-# join with df_state to get state.abb and state.name --> to have a common col to join with acfrs
-df_state <- data.frame(state.abb, state.name) %>% 
-  add_row(state.abb = "PR", state.name = "Puerto Rico") %>% 
-  add_row(state.abb = "DC", state.name = "District of Columbia")
-
-pop_county <- d_county %>% 
-  separate(`Geographic Area Name`, c("county", "state.name"), sep = ",")  %>%  
-  mutate(state.name = str_trim(state.name)) %>% 
-  left_join(df_state) %>% 
-  
-# normalize county names in pop
-  mutate(county = str_to_lower(county),
-         county = str_remove(county,"\\.|'|‘")) %>% 
-
 # Nashville-Davidson metropolitan government (balance) TN == "Nashville and Davidson County" TN in ACFRS--> rename to match
 mutate(county = ifelse(county == "nashville-davidson metropolitan government (balance)" & state.abb == "TN", "nashville and davidson county", county)) %>%
 # 
 # # Louisville/Jefferson County metro government (balance) KY == Louisville-Jefferson County KY in ACFRs 
 mutate(county = ifelse(county == "louisville/jefferson county metro government (balance)" & state.abb == "KY", "louisville-jefferson county", county))
-
-
-## Check some special cases: Names in Census population differ from names in ACFRs
-  # pop_county %>% 
-  # filter(state.abb == "TN" | state.abb == "KY") %>% 
-  # filter(str_detect(county, "davidson|jefferson")) #jefferson county ; davidson county
-# 
-# # change to name style in acfrs
-# mutate(county = ifelse(county == "kauai county", "kaua‘i county", county))
-# 
-# # recheck special cases: 
-# pop %>% 
-#   filter(str_detect(county, "nashville-davidson|louisville-jefferson|kauai county"))
-
-all_counties <- pop_county %>% select(state.name, id, county, population) %>% distinct() %>% filter(str_detect(county, "county"))
 ```
 
 There are `r nrow(pop_county)` observations in census population data.
@@ -77,85 +62,68 @@ There are `r nrow(pop_county)` observations in census population data.
 # ACFRs data - County Level
 
 ```{r}
-acfrs <- readRDS("data/data_from_dbsite_2020.RDS") %>% 
-# rename to easily join with census pop data later
-  rename(county = name) %>% 
-  rename(state.abb = state) %>% 
-  
-# normalize county names 
-  mutate(county = str_to_lower(county), 
-         county = str_remove(county,"\\.|'|‘")
+acfrs_generalpurpose_2020 <- readRDS("data/data_from_dbsite_2020.RDS") %>% #data updated July 21, 2023
+              filter(category == "General Purpose") %>%
+# normalize names 
+  mutate(name = str_to_lower(name), 
+         name = str_remove(name,"\\.|'|‘"),
+         state.abb = state
          ) #%>% filter(county == "nashville and davidson county")
 ```
-ACFRs has `r nrow(acfrs)` observations. 
+ACFRs general purpose 2020 category has `r nrow(acfrs_generalpurpose_2020)` observations. 
 
 
-## Find "County" or "Municipality" in ACFRs
+## Step 1: find entities whose names contain "County" or "Municipality" in ACFRs
 ```{r}
 # ACFRs entities that contains the word "County" in their names
-  acfrs_county <- acfrs %>% 
-  filter(category == "General Purpose") %>% 
-  filter(grepl("county|municipality", county)) 
-
+  acfrs_county <- acfrs_generalpurpose_2020 %>% 
+  filter(grepl("county|municipality", name)) %>% 
+  
+  # correct some simple spelling errors
+  mutate(name = case_when(name == "dona ana county" ~ "doña ana county", 
+                          TRUE ~ name)) 
 ```
 
 There are `r nrow(acfrs_county)` entities that contain the word "county" in their names. 
 
-## Special cases 
+## Step 2: Special cases 
 ### Louisiana
 
 In Louisiana, counties are called Parishes.
 
 ```{r}
-louisiana_parish <- acfrs %>% 
-  filter(category == "General Purpose") %>%  
+louisiana_parish <- acfrs_generalpurpose_2020 %>% 
   filter(state.abb == "LA") %>% 
-  filter(grepl("parish", county))
-
+  filter(grepl("parish", name))
 ```
 There're `r nrow(louisiana_parish)` Louisiana entities that contain the word "Parish" in their names. 
 
 ### Alaska
-
+Census counts 30 counties under 3 types: Borough, Municipality, Census Area
 Alaska often uses the term "Borough" instead of County. 
 ```{r}
-#Check term “Municipality” too, not found any. 
-alaska_borough <- acfrs %>% 
-  filter(category == "General Purpose") %>%  
+# Get Alaska counties in census
+alaska_county_census <- census_county_2020 %>% 
+  filter(state.name == "Alaska") %>% 
+  mutate(county_name = str_remove_all(county_name, "city and borough"), 
+         county_name = str_remove_all(county_name, "(borough)|(census area)|(municipality)"),
+         county_name = str_to_lower(county_name),
+         county_name = str_squish(county_name))
+
+#NOTE: Both city and borough:
+#"sitka city and borough", "wrangell city and borough", "yakutat city and borough"
+```
+
+```{r}
+# use the list of Alaska counties in census to find counties in acfrs:
+alaska_borough_acfrs <- acfrs_generalpurpose_2020 %>% 
   filter(state.abb == "AK") %>% 
-  filter(grepl("borough", county)) %>% arrange(county)
-          
-```
+  mutate(name = str_remove_all(name, "borough"),
+         name = str_to_lower(name),
+         name = str_squish(name)) %>% 
 
-### Puerto Rico (Note: not using to match with ACFRS for now)
-Update Feb 7/2022: Marc: "Drop Puerto Rico out of the county analysis?  I realize it
-was in the 2020 Census data, but they are not going to be on our map."
+  filter(name %in% alaska_county_census$county_name) %>% arrange(name)
 
-Puerto Rico only has “Municipios” that perform the functions of both cities and counties.
-
-The problem is: 
-*In ACFRs, there's no Puerto Rico entities that has "Municipio" in their names.
-*In Census, Puerto Rico counties do contain the word "Municipio" in their names.
-
-Solution: Remove "Municipio" in the names in Census to match with ACFRs
-
-Potential risk: Not all Puerto Rico entities in ACFRs without the word "Municipio" are actually a municipio.
-
-```{r}
-# in Census population, find county that has the word "Municipio" --> remove the word "Municipio" to match with acfrs 
-puertorico_census_pop <- pop_county %>% 
-          filter(state.name == "Puerto Rico") %>% 
-  filter(grepl("municipio", county)) %>% 
-  mutate(county = str_remove(county, " municipio")) 
-```
-
-```{r}
-# In ACFRs, get all PR entities in General Purpose 
- puertorico_afrs_census_pop <-  acfrs %>% 
-          filter(category == "General Purpose") %>% 
-          filter(state.abb == "PR") %>% 
-          #join Puerto Rico in acfrs with PR in census -
-  left_join(puertorico_census_pop, by = c("state.abb", "county")) 
 ```
 
 # Join ACFRs and Census County Population 
@@ -166,27 +134,37 @@ Joining these components:
 
 *acfrs entities of Louisiana that contain word "Parish" in their names
 
-*acfrs entities of Louisiana that contain word "Borough" in their names
-
-*Puerto Rico in acfrs and Census. Note that in ACFRs, there's no Puerto Rico entities has "Municipio". To match with PR in Census, need to remove this word from Census population data. This introduces a risk that there might be cases where PR entities in ACFRs without word "Municipio" are NOT actually Municipio.
+*acfrs entities of Alaska that contain word "Borough" in their names
 
 
 ```{r}
 # first, join entities in ACFRs contain words "County" + Louisiana that contain word "Parish" + alaska that contain "Borough" in their names
 acfrs_county_parish_borough <- rbind(acfrs_county, louisiana_parish) %>% 
-                              rbind(alaska_borough) 
+                              rbind(alaska_borough_acfrs) %>% 
+  rename(county_name = name) %>% 
+  
+  # cleaning to match with names in census
+  mutate(county_name = str_remove_all(county_name, " fiscal court"))
+  
+```
 
-# next, join with census Census population by = c("state.abb", "county")
+```{r}
+census_county_2020 %>% 
+  #filter(state.abb == "NM") %>% 
+  filter(str_detect(county_name, "anchorage"))
+
+#GA athens-clarke county in acfrs is clarke census
+```
+
+```{r}
+# join acfrs with census population by = c("state.abb", "county")
 county_pop_census_acfrs <- acfrs_county_parish_borough %>% 
-            left_join(pop_county, by = c("state.abb", "county")) %>% 
-            
-# third, bind with puertorico 
-           #rbind(puertorico_afrs_census_pop) %>% 
-            arrange(desc(population)) %>% distinct() 
+  select(state.abb, county_name, net_pension_liability) %>% 
+  
+            left_join(census_county_2020, by = c("state.abb", "county_name")) %>% 
+            arrange(desc(population)) #%>% filter(is.na(population))
 
-# --> 2569 county level entities, of which 179 do not have population data
-#county_pop_census_acfrs %>% filter(is.na(population)) 
-
+# --> 2552 county level entities, of which 75 do not have population data
 ```
 
 
@@ -239,7 +217,6 @@ Some cities are counties. Need to extract the data of cities list to add new row
 *"Indianapolis" = "Indianapolis-Marion County"
 
 ```{r}
-
 acfrs_city_pop <- readRDS("acfrs_city_pop.RDS") # produced from city_gov.Rmd
 
 ##Jacksonville city, FL  = Duval County, FL 
@@ -262,14 +239,12 @@ filter(state.abb == "CO" & name == "City and County of Denver") %>%
   mutate(FIPS = "08031",
          name = "Denver County")
 
-
 #Philadelphia, PA
 philadelphia <- acfrs_city_pop %>% 
 filter(state.abb == "PA" & name == "Philadelphia") %>% 
   mutate(FIPS = "42101", 
          name =  "Philadelphia County")
          
-
 #Indianapolis-Marion County, Indiana
 indianapolis_marion <- acfrs_city_pop %>% 
 filter(state.abb == "IN" & name == "Indianapolis") %>% 
@@ -335,30 +310,4 @@ all_counties %>% select (FIPS) %>%  group_by_all() %>%
 
 ```
 
-```{r}
-
-  ##
-Prop1 <- c(nrow(acfrs_counties), nrow(all_counties) - nrow(acfrs_counties))
-
- pie(Prop1, labels = c(paste("Counties already \nin Acfrs database:", nrow(acfrs_counties)),
-                      paste("Counties being processed:", nrow(all_counties) - nrow(acfrs_counties))),
-     main = "Total # of counties: 3041")
-
-```
-
-```{r}
-# 
-all_counties  %>% #filter(!str_detect(county, "\\("))
-  filter(!FIPS %in% acfrs_counties$FIPS) %>%  
-  arrange(state.name, population) #%>%  write.csv("missing_counties.csv") 
-
-#used the missing_counties.csv above to manually track every county. Got this list
-rio::import(here::here("data", "Missing_counties_manual_checked.xlsx")) %>% #filter(is.na(notes)) 
- filter(note == "")
-
-Prop2 <- c(170, 117, 294)
-
- pie(Prop2, labels = c("Can't find: 170", "Small counties, Haven't searched: 117", "\nUploaded files\nBeing discussed\n No county government: 294"),
-     main = "Total # of counties being processed: 581")
-```
 
