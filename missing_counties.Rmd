@@ -1,0 +1,15 @@
+---
+title: "missing_counties"
+output: html_document
+date: "2023-07-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+rio::import("Missing_counties_manual_checked_july 21 2023.xlsx") %>% 
+  filter(str_detect(`Thuy's notes`,"(uploaded file to portal)|(only 2020)|(only 2021)|(only 2019)|((uploaded files to portal))"))
+```
+

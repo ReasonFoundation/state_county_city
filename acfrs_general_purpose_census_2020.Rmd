@@ -1,0 +1,525 @@
+---
+title: "Joining ACFRs General Purpose Entities with Census data"
+output: 
+  html_document:
+    toc: TRUE
+    toc_float: TRUE
+    toc_depth: 3
+    number_sections: true
+---
+
+```{r setup, include=FALSE, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE)
+options(scipen = 999)
+library(tidyverse)
+library(dplyr)
+library(DT)
+```
+# Tasks & Challenges 
+
+* Entity names in Acfrs database are not obvious, i.e., does not always contain a certain word to indicate it's government type (city, town, county). Even some names contains a certain word such as "county", it actually a town. For example: "halifax county" in acfrs is in fact a town (population 1000) of Halifax county (pop more than 30k)
+
+*ACFRs data has government_id (which is called census_id in the ACFRs portal). This is government unit identifier, and is not geo_id that are often used in many census datasets.
+
+Two points above constitute challenges when we need to 1) adding population field in acfrs data, and 2) sort out what type of entities are collected.
+
+* Two main ways to solve the problems: 
+
+- Use a "middle file" to link geo_id and government_ID
+- Joining by names and states 
+
+Note on geo ID and government unit: 
+
+*The [census population data use GEOIDs](https://www.census.gov/programs-surveys/geography/guidance/geo-identifiers.html#:~:text=The%20full%20GEOID%20for%20many,codes%2C%20in%20which%20they%20nest.), which are "numeric codes that uniquely identify all administrative/legal and statistical geographic areas for which the Census Bureau tabulates data". 
+
+
+# Census Data 2020
+
+## Census All 81,395
+
+```{r}
+df_state <- data.frame(state.abb, state.name) %>% 
+  add_row(state.abb = "DC", state.name = "District of Columbia")
+
+census_all_2020 <- rio::import(here::here("data", "sub-est2022.csv")) %>% #key to variables: SUB-EST2022_dictionary.pdf
+   clean_names() %>% 
+   mutate(name = str_to_lower(name),
+          name = str_remove(name,"\\.|'|‘")) %>% 
+  rename (population = popestimate2020,
+          state.name = stname) %>% left_join(df_state) %>% 
+  select(-c(primgeo_flag, estimatesbase2020, popestimate2021, popestimate2022))
+
+```
+
+## Census Consilidated Cities
+
+```{r}
+census_consolidated_city_2020 <- census_all_2020 %>% 
+  clean_names() %>% filter(sumlev== 170 | #170 = Consolidated city
+                             sumlev == 172) # 172 = Consolidated city -- place within consolidated city
+
+```
+
+# ACFRs General Purpose 2020
+```{r}
+# 1. get all general purpose entities in acfrs, most contains governmentID
+acfrs_general_purpose <- readRDS("data/data_from_dbsite_2020.RDS") %>% 
+  filter(category == "General Purpose") %>% 
+  select(-c(5:11, category, has_unconfirmed, component_unit_of_id)) %>% 
+  mutate(name = str_to_lower(name)) %>% 
+  rename(government_ID = census_id) %>% # census_id in Acfrs database is actually government_ID
+# some government_ID in ACFRs has 13 characters-> need to add 0
+  mutate(government_ID = ifelse(str_length(government_ID) < 14, paste0("0", government_ID), government_ID)) 
+```
+
+
+# Extracting States
+
+### States from ACFRS 2020
+
+```{r}
+acfrs_state_2020 <- acfrs_general_purpose %>% filter(str_detect(name, "(state of)|(district of columbia)|(commonwealth)")) %>% 
+  filter(!str_detect(name, "yap|kosrae")) %>% 
+
+  #clean state names to match with those names in census population data 
+  mutate(name = str_remove(name, "state of "),
+        name = str_remove(name, "commonwealth of "),
+        name = str_remove(name, "government of the ")) %>% 
+  #left_join(states_population) %>% 
+  #select(-c(year, has_unconfirmed)) %>% 
+  filter(!str_detect(name, "(iowa single audit)|(puerto rico)")) %>% 
+  
+  rename(state.abb = state)
+
+```
+
+### State from Census 2020
+```{r}
+census_state_2020 <- census_all_2020 %>% filter(sumlev == 40)
+ 
+```
+
+### Joining acfrs states & census states: state_gov_2020
+```{r}
+state_gov_2020 <- acfrs_state_2020 %>% left_join(census_state_2020) %>% 
+  select(-c(27:33, state.name)) %>% 
+  mutate(geoID = "")
+
+state_gov_2020 %>% write.csv("state_gov_2020.csv")
+```
+
+
+# Extracting Cities and Places: 7111
+## Step 1: Get polulation & geoID from Census Cities & Towns
+
+List of cities and places with geoID & population from file "City and Town Mapping.xlsx". We will use this geoID to join with a middle file that has geoID and government_ID. From there get to acfrs data, which has government_ID. 
+
+Don't use the above file "sub-est2022.csv" because that file does not have geoID
+
+## Census cities as counties
+```{r}
+census_cityAScounty_2020 <- census_all_2020 %>%
+# Active government providing primary
+#general-purpose functions. See more detail in file FunctionalStatusCode_census.pdf
+#  filter(funcstat == "A") %>%
+# excluding state & county
+  #filter(sumlev != 040) %>% # 40 = summary level state
+  filter(sumlev == 050) %>%   # 50 = summary level county
+  filter(str_detect(name, "(city)"))
+```
+
+
+```{r}
+#Marc emailed this data Feb2 2022: using 017 Census master file data to map to the 2020 Census Population data using FIPS Codes. GEO_ID: Census identifiers that point to population of places in US
+city_place_census_2020 <- rio::import(here::here("data", "City and Town Mapping.xlsx"), sheet = 2) %>% 
+rename(population = `!!Total:`, 
+       geoID = GEO_ID) %>% 
+  separate(NAME, c("city_place", "state.name"), sep = ",")  %>%  
+  mutate(state.name = str_trim(state.name), 
+         city_place = str_trim(city_place),
+         city_place = str_to_lower(city_place)) %>% 
+  left_join(df_state) %>% drop_na() 
+ 
+```
+
+There are `r nrow(pop)` observations in this data set. 
+
+## Step 2: Get a middle file that has government_ID and geoID
+
+ACFRs database uses government ID (enumeration ID of local governments), but data does not use FIP codes, and does not have geo_id. 
+We use a Census master file data to map ACFRs to the 2020 Census Population data by FIPS Codes.
+
+```{r}
+#government_ID (used in ACFRs): enumeration ID of local governments. 
+# Note that population data is ACFRs portal is 2017 -> don't use
+# Note: census_id, which means government_id in Acfrs are numeric --> can be turn to scientific notation in R --> will not match --> need to avoid scientific notation. 
+
+# This middle file has both government_ID and geo_id
+middle_file_governmentID_geoID <- rio::import(here::here("data", "City and Town Mapping.xlsx"), sheet = 3) %>% 
+  select(government_ID, `INFERRED GEO_ID`, NAME, CITY, STATE_AB, COUNTY_AREA_NAME)  %>% 
+  rename(geoID = `INFERRED GEO_ID`,  # Marc created INFERRED GEO_ID, which meant to be geoID
+         original_name = NAME, 
+         state.abb = STATE_AB) %>% 
+  mutate(original_name = str_to_lower(original_name))
+```
+
+## Step 3: Linking census population to middle file government_ID and geoID
+city_place_census_2020 has population & geoID 
+middle_file_governmentID_geoID has geoID and government_ID
+ACFRs has governement_ID 
+```{r}
+# join city_place_census_2020 with the middle file to get population into that middle file. 
+governmentID_geoID_population <- city_place_census_2020 %>% # has population
+  left_join(middle_file_governmentID_geoID) %>% # middle file
+  drop_na(government_ID) 
+
+# governmentID_geoID_population now has population, governement_ID and geoID
+```
+
+## Step 4: Join ACFRs to census population by government_ID
+
+* Take all acfrs general purpose, less states, to join with governmentID_geoID_population. The result would be acfrs cities and places with geoID and population data. 
+
+```{r}
+# join acfrs general purpose with city and town population data that has governmentID
+acfrs_city_place_pop_20 <- acfrs_general_purpose %>% 
+  filter(!id %in% state_gov_2020$id) %>% # take out state entities 
+  
+  left_join(governmentID_geoID_population) %>% 
+  drop_na(population) %>%   # 7110 obs
+  select(state.abb, 2:27, population, city_place)
+#does this include state and counties? No. This list is only city and place
+
+#Even some names contains word "county", it actually a town. For example: "halifax county" in acfrs is in fact a town (population 1000) of Halifax county (pop more than 30k)
+
+# macon-bibb county pop is correct --> why???
+#acfrs_city_pop %>% filter(str_detect(name, "county"))
+
+acfrs_city_place_pop_20 %>% write.csv("acfrs_city_place_pop_20.csv")
+acfrs_city_place_pop %>% filter(str_detect(city_place, "town"))
+
+# check some city as county - are they included in list acfrs_city_place_pop_20?
+#Yes: baltimore city MD, alexandria city VA
+census_cityAScounty_2020 
+acfrs_city_place_pop_20 %>% 
+  filter(str_detect(name, "(alexandria)|(baltimore)"))
+```
+
+# Extracting counties
+Second half of ACFRs general purpose: 5121 Acfrs_NOT_cityplace 
+
+Acfrs general purpose excluding cities and places
+```{r}
+# the rest of acfrs general purpose, has government unit ID, but do not have geo ID --> now join by name in the list of census name file 
+# risk of matching my name: identical names in different state --> wrong join
+
+acfrs_NOT_cityplace <- acfrs_general_purpose %>% # total 12,231
+  filter(!id %in% acfrs_city_place_pop$id) %>%  # 5121 obs, excludes 7110 in city list above
+rename(state.abb = state)
+```
+
+### Census counties
+
+```{r}
+census_county_2020 <-  census_all_2020 %>% 
+   filter(sumlev == 050) %>% # county level
+  rename(county_code = county) %>% 
+
+# Check special cases: 
+city_as_county_census <- census_county_2020 %>% 
+  # 41 cities & district of columbia categorized as county
+  filter(!str_detect(name, "(borough)|(county)|(parish)|(planning regio)|(census area)|(municipality)")) 
+# Note: Planning Regio, lacking "n" at last, to include all Planning Region in CT
+
+#Louisiana has 64 entities "Parish"
+# Alaska has 30 entities " 17 Borough", "Census Area", "Municipality"
+# Connecticut has 9 entities "Planning Region"
+
+```
+
+## Counties from ACFRs
+### Step 1: filter for counties from ACFRs
+```{r}
+acfrs_county <- acfrs_NOT_cityplace %>% 
+  filter(grepl("county|municipality", name)) %>% 
+  
+  # correct some simple spelling errors
+  mutate(name = case_when(name == "dona ana county" ~ "doña ana county", 
+                          TRUE ~ name)) 
+```
+
+### Step 2: Special cases of county level 
+#### Louisiana
+
+In Louisiana, counties are called Parishes.
+
+```{r}
+louisiana_parish <- acfrs_NOT_cityplace %>% 
+  filter(state.abb == "LA") %>% 
+  filter(grepl("parish", name))
+```
+
+#### Alaska
+
+Not a single easy way to fill out counties and equivalents in Alaska. Census counts 30 counties in 3 types: Borough, Municipality, Census Area.
+
+```{r}
+# Get Alaska counties in census
+alaska_county_census <- census_county_2020 %>% 
+  filter(state.name == "Alaska") %>% 
+  mutate(name = str_remove_all(name, "city and borough"), 
+         name = str_remove_all(name, "(borough)|(census area)|(municipality)"),
+         name = str_to_lower(name),
+         name = str_squish(name))
+
+#NOTE: Both city and borough:
+#"sitka city and borough", "wrangell city and borough", "yakutat city and borough"
+```
+
+```{r}
+# use the list of Alaska counties in census to find counties in acfrs:
+alaska_borough_acfrs <- acfrs_NOT_cityplace %>% 
+  filter(state.abb == "AK") %>% 
+  mutate(name = str_remove_all(name, "borough"),
+         name = str_to_lower(name),
+         name = str_squish(name)) %>% 
+
+  filter(name %in% alaska_county_census$name) %>% arrange(name)
+
+```
+
+### Step 3: Binding counties, parish, borough together
+```{r}
+# first, join entities in ACFRs contain words "County" + Louisiana that contain word "Parish" + alaska that contain "Borough" in their names
+acfrs_county_parish_borough <- rbind(acfrs_county, louisiana_parish) %>% 
+                              rbind(alaska_borough_acfrs) %>% 
+  
+  # cleaning to match with names in census
+  mutate(name = str_remove_all(name, " fiscal court"))
+
+```
+
+### Step 4: Joining ACFRS counties with Census counties  
+```{r}
+# join acfrs with census population by = c("state.abb", "county")
+county_pop_census_acfrs_20 <- acfrs_county_parish_borough %>% 
+            left_join(census_county_2020, by = c("state.abb", "name")) %>% 
+            arrange(desc(population)) %>% 
+            drop_na(population) 
+
+county_pop_census_acfrs_20 %>% write.csv("county_pop_census_acfrs_20.csv")
+```
+
+# Remaining acfrs_NOT_cityplace_NOT_county:  acfrs_NOT_cityplace less county_pop_census_acfrs
+
+```{r}
+acfrs_geoID_NO_population_20 <- acfrs_NOT_cityplace %>% 
+  filter(!id %in% county_pop_census_acfrs_20$id) %>%  # filter out counties
+  
+  # join again with the middle file link governmentID and geoID
+  left_join(governmentID_geoID) %>% # middle file
+  drop_na(geoID) %>% #%>% 
+  
+  mutate(original_name = str_to_lower(original_name)) #%>% 
+  #select(-c(27:30)) %>% 
+
+  # check how many of these are town
+  #filter(str_detect(original_name, "(township of)|(town of)"))
+
+  
+  acfrs_geoID_NO_population_20 %>% write.csv("acfrs_geoID_NO_population_20.csv")
+
+  
+ other_entities <-  acfrs_NOT_cityplace %>% 
+  filter(!id %in% county_pop_census_acfrs_20$id) %>%
+    filter(!id %in% acfrs_geoID_NO_population$id) 
+```
+
+```{r}
+  # Problem when join 
+  left_join(census_all_2020, by = c("name", "state")) %>% # inflated when join with census
+  
+  
+  rename(population = popestimate2020) %>% select(-state.name) %>%  
+select(name, state, population) %>% distinct() # 3835 
+  
+# example of inflated join: 1 acfrs name ~ many census names - don't know which acfrs corresponds to which census entity
+  acfrs_general_purpose %>% # total 12,231
+  filter(!government_ID %in% acfrs_city_place_pop$government_ID) %>% # 5121 obs, excludes 7110 in city list above
+  select(state, name, government_ID, total_liabilities) %>% filter(name == "west branch township") # --> only 1
+  
+    filter(name == "west branch township") #--> census has many "west branch township" MI as minor civil divisions in different counties in the same state. Acfrs only have 9 instances inwhich the name of entities are note which county they belong to: 
+    acfrs_general_purpose %>% filter(str_detect(name, "county\\)"))
+  
+    
+### Does acfrs_rest_pop include state and counties? Yes. 
+acfrs_city_place_pop %>% filter(str_detect(name, "michigan"))
+acfrs_rest_pop %>% filter(str_detect(name, "michigan"))
+acfrs_general_purpose %>%filter(str_detect(name, "michigan"))
+
+
+# Take state and county out of acfrs_rest_pop
+acfrs_rest_pop %>% 
+  filter(!str_detect(name, "state of")) %>% 
+  filter(!str_detect(name, "(county)")) %>% 
+  
+  distinct(name, state, .keep_all = TRUE) %>%  ## The remaining 2616 entities 
+filter(is.na(population)) %>%  # of which 2616 - 1429 = 1187 do not have population
+arrange(state)
+
+```
+
+
+At this point Acfrs now has `r nrow(acfrs_governmentID)` general purpose entities FY 2020, of which 6810 are cities and towns. 
+
+
+## Checking for overlapping 
+
+Check if there's any overlapping between the above lists
+
+```{r}
+# all general purpose entities: 11187
+length(unique(acfrs_governmentID$government_ID)) 
+
+unique(acfrs_governmentID$government_ID) -> t1
+
+# cities and towns: 6810
+length(unique(acfrs_city_pop$government_ID)) 
+unique(acfrs_city_pop$government_ID) ->t2
+
+# gap bw the 2 above: 4377
+length(unique(setdiff(t1, t2)))
+
+# list of counties (in count_gov.Rmd): 2569
+county_pop_census_acfrs <- readRDS("county_pop_census_acfrs.RDS")
+length(unique(county_pop_census_acfrs$census_id))
+unique(county_pop_census_acfrs$census_id) ->t3
+
+# entities overlapping  between city list and county list
+
+intersect(t2, t3) -> intersect_city_county
+
+# view the overlapping cities 
+acfrs_city_pop %>% filter(government_ID %in% intersect_city_county) %>% 
+ select(name, government_ID)
+
+```
+Those whose names contain parentheses are actually cities. The part in side the parentheses indicates which county they belong to. 
+
+
+## Final City and County List
+
+```{r}
+state_gov <-readRDS("state_gov.RDS")
+
+# composition of city, county, state gov in general purpose
+ # acfrs_governmentID %>% 
+ #  left_join(pop_governmentID) %>% #drop_na(population) %>% 
+ #  select(-c(state, STATE_AB, year)) %>% 
+ #  arrange(desc(population)) %>% 
+
+# take out county 2569
+# filter(!government_ID %in% county_pop_census_acfrs$census_id) %>% 
+#    filter(!id %in% state_gov$id)
+   
+```
+
+
+
+Lastly, take 15 who are actually counties out of the cities list. 
+```{r}
+# actually county
+  acfrs_city_pop %>% filter(government_ID %in% intersect_city_county) %>% 
+  filter(!grepl("\\)", name)) -> actual_county
+
+acfrs_city_pop_final <- acfrs_city_pop %>% 
+  filter(!government_ID %in% actual_county$government_ID) 
+
+datatable(acfrs_city_pop_final)
+
+ saveRDS(acfrs_city_pop_final, "acfrs_city_pop.RDS")
+ 
+ acfrs_city_pop_final %>% arrange(desc(population)) %>% slice(1:10) -> top10_city_2020
+ top10_city_2020 %>% write.csv("top10_city_2020.csv")
+```
+
+
+```{r}
+# missing Philadelphia PA
+readRDS("data/data_from_dbsite_2021.RDS") %>% 
+   filter(id %in% top10_city_2020$id) %>% write.csv("top10_city_2021.csv")
+```
+
+The list of city and county contains `r nrow(acfrs_city_pop_final)` entities. 
+
+Another approach: 
+
+Subtract all states and counties from general purpose
+
+```{r}
+state_gov <- readRDS("state_gov.RDS")
+counties <- readRDS("counties.RDS") 
+
+gen_purpose <- readRDS("data/data_from_dbsite_2020.RDS") %>% 
+  filter(category == "General Purpose")  
+  
+gen_purpose %>% 
+  mutate(id = as.character(id)) %>% 
+  # take out state gov
+  filter(!id %in% state_gov$id) %>% 
+  
+  # take out county %>% 
+  filter(!id %in% counties$id.x)
+  
+  # check id in city and county
+
+length(setdiff(acfrs_city_pop_final$id, counties$id.x))
+
+#over lapping city and county
+length(intersect(acfrs_city_pop_final$id, counties$id))
+  
+```
+
+```{r}
+nrow(counties)
+slices <- c(51, nrow(counties), nrow(gen_purpose) - nrow(counties))
+lbls <- c("state", "county", "city and township")
+
+lbls <- paste(lbls,":", slices, "entities")
+pie(slices, labels = lbls, main="Share of entities in General Purpose")
+
+```
+
+
+```{r}
+slices <- c(51, nrow(counties), nrow(acfrs_city_pop_final), nrow(gen_purpose) - nrow(counties)-nrow(acfrs_city_pop_final))
+lbls <- c("state", "county", "city and township \nwith pop data", "city and township \nw/o pop data")
+
+lbls <- paste(lbls,":", slices, "entities")
+pie(slices, labels = lbls, main="Share of entities in General Purpose with \nand w/o population data")
+```
+
+```{r}
+# general purpose w/o pop data:
+gen_purpose %>% 
+  filter(!id %in% state_gov$id) %>% 
+  filter(!id %in% counties$id.x) %>% 
+  filter(!id %in% acfrs_city_pop_final$id) %>% 
+  select(id, name, state, total_liabilities, net_pension_liability) %>% 
+  # 
+   # filter(total_liabilities > 500000000) %>% # 33 entities is 5 hundred mil a resonable cut? Using total or using net_pension
+   # arrange(desc(total_liabilities)) -> t_1
+
+# Using total or using net_pension
+  # arrange(desc(net_pension_liability)) %>% 
+  # filter(net_pension_liability > 100000000) -> t_2# 42
+
+# using both: 
+  filter(total_liabilities > 500000000 & net_pension_liability > 100000000) -> t_3 # 23 total_lia more than 500 mil & net pen sion more than 100 mil
+
+# Manually adding population data to entities with total_liability greater than 500 mil
+  datatable(t_1)
+```
+
+
+
