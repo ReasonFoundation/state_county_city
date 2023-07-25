@@ -37,11 +37,31 @@ Note on geo ID and government unit:
 
 ## Census All 81,395
 
+Source of census dataset: https://www2.census.gov/programs-surveys/popest/datasets/2020-2022/
+Key to variables: SUB-EST2022_dictionary.pdf
+
+Understanding Geographic Identifiers (GEOIDs): https://www.census.gov/programs-surveys/geography/guidance/geo-identifiers.html#:~:text=The%20full%20GEOID%20for%20many,codes%2C%20in%20which%20they%20nest.
+
+Cartographic Boundary File Summary Level Codes: https://www.census.gov/programs-surveys/geography/technical-documentation/naming-convention/cartographic-boundary-file/carto-boundary-summary-level.html
+
+Functional Status Code Description: FunctionalStatusCodes_census.pdf
+Individual Government ID File Record Layout: Individual Government ID File Record Layout.pdf
+
+The key for SUMLEV is as follows:
+040 = State
+050 = County
+061 = Minor Civil Division
+071 = Minor Civil Division place part
+157 = County place part
+162 = Incorporated place
+170 = Consolidated city
+172 = Consolidated city -- place within consolidated city
+
 ```{r}
 df_state <- data.frame(state.abb, state.name) %>% 
   add_row(state.abb = "DC", state.name = "District of Columbia")
 
-census_all_2020 <- rio::import(here::here("data", "sub-est2022.csv")) %>% #key to variables: SUB-EST2022_dictionary.pdf
+census_all_2020 <- rio::import(here::here("data", "sub-est2022.csv")) %>% 
    clean_names() %>% 
    mutate(name = str_to_lower(name),
           name = str_remove(name,"\\.|'|‘")) %>% 
@@ -51,13 +71,25 @@ census_all_2020 <- rio::import(here::here("data", "sub-est2022.csv")) %>% #key t
 
 ```
 
-## Census Consilidated Cities
+## Census Consolidated Cities
 
 ```{r}
 census_consolidated_city_2020 <- census_all_2020 %>% 
   clean_names() %>% filter(sumlev== 170 | #170 = Consolidated city
                              sumlev == 172) # 172 = Consolidated city -- place within consolidated city
 
+```
+
+## Census cities as counties
+```{r}
+census_cityAScounty_2020 <- census_all_2020 %>%
+# Active government providing primary
+#general-purpose functions. See more detail in file FunctionalStatusCode_census.pdf
+#  filter(funcstat == "A") %>%
+# excluding state & county
+  #filter(sumlev != 040) %>% # 40 = summary level state
+  filter(sumlev == 050) %>%   # 50 = summary level county
+  filter(str_detect(name, "(city)"))
 ```
 
 # ACFRs General Purpose 2020
@@ -114,19 +146,19 @@ state_gov_2020 %>% write.csv("state_gov_2020.csv")
 
 List of cities and places with geoID & population from file "City and Town Mapping.xlsx". We will use this geoID to join with a middle file that has geoID and government_ID. From there get to acfrs data, which has government_ID. 
 
-Don't use the above file "sub-est2022.csv" because that file does not have geoID
+Don't use the above file "sub-est2022.csv" because that file does not have geoID. Just use that to check how many cities and places
 
-## Census cities as counties
 ```{r}
-census_cityAScounty_2020 <- census_all_2020 %>%
-# Active government providing primary
-#general-purpose functions. See more detail in file FunctionalStatusCode_census.pdf
-#  filter(funcstat == "A") %>%
-# excluding state & county
-  #filter(sumlev != 040) %>% # 40 = summary level state
-  filter(sumlev == 050) %>%   # 50 = summary level county
-  filter(str_detect(name, "(city)"))
+census_all_2020 %>% 
+  #filter(sumlev == 162) %>% #Incorporated place
+  filter(sumlev == 71) %>% 
+  #filter(funcstat == "A") %>% 
+  filter(str_detect(name, "silver spring"))
+
 ```
+
+
+
 
 
 ```{r}
@@ -330,10 +362,73 @@ acfrs_geoID_NO_population_20 <- acfrs_NOT_cityplace %>%
   acfrs_geoID_NO_population_20 %>% write.csv("acfrs_geoID_NO_population_20.csv")
 
   
- other_entities <-  acfrs_NOT_cityplace %>% 
+ other_entities_20 <-  acfrs_NOT_cityplace %>% 
   filter(!id %in% county_pop_census_acfrs_20$id) %>%
-    filter(!id %in% acfrs_geoID_NO_population$id) 
+    filter(!id %in% acfrs_geoID_NO_population_20$id) 
 ```
+## Number of missing county - broken down by state
+```{r}
+local_gov_type_state_17 <- rio::import(here::here("data/table2_Local Governments by Type and State_2017/COG2017_CG1700ORG02_Data.xlsx")) %>% clean_names() 
+
+# Municipal Governments
+census_county_gov_count <- local_gov_type_state_17 %>% 
+filter(agg_desc_ttl == "Total Local Government Units - County Governments") %>% 
+  select(geo_ttl, amount) %>% 
+  slice(2:51) %>% 
+  rename(census_num_county_gov = amount,
+         state.name = geo_ttl)
+  
+```
+
+```{r}
+acfrs_county_gov_count <- county_pop_census_acfrs_20 %>% 
+  select(state.name, name) %>% 
+  group_by(state.name) %>% 
+  add_count() %>% 
+  arrange(state.name) %>% select(-name) %>% 
+  rename(acfrs_num_county_gov = n) %>% 
+  distinct() 
+```
+
+```{r}
+census_county_gov_count %>% left_join(acfrs_county_gov_count) %>% 
+  mutate(num_missing_county = as.numeric(census_num_county_gov) - acfrs_num_county_gov) %>% write.csv("num_missing_county.csv")
+```
+## Number of Municipal Governments - broken down by state
+```{r}
+# Municipal Governments
+census_municipal_gov_count <- local_gov_type_state_17 %>% 
+filter(agg_desc_ttl == "Total Local Government Units - Subcounty Governments - Municipal Governments") %>% 
+  select(geo_ttl, amount) %>% 
+  slice(2:51) %>% 
+  rename(census_num_municipal_gov = amount,
+         state.name = geo_ttl)
+  19495
+```
+
+```{r}
+acfrs_municipal_gov_count <- acfrs_city_place_pop_20 %>% left_join(df_state) %>% 
+  select(state.name, name) %>% 
+  group_by(state.name) %>% 
+  add_count() %>% 
+  arrange(state.name) %>% select(-name) %>% 
+  rename(acfrs_num_municipal_gov = n) %>% 
+  distinct() 
+```
+
+```{r}
+census_municipal_gov_count %>% left_join(acfrs_municipal_gov_count) %>% 
+  mutate(num_missing_municipal = as.numeric(census_num_municipal_gov) - acfrs_num_municipal_gov) %>% write.csv("num_missing_municipal.csv")
+```
+
+```{r}
+# Township Governments
+local_gov_type_state_17 %>% 
+filter(agg_desc_ttl == "" |
+       agg_desc_ttl  == "Total Local Government Units - Subcounty Governments - Township Governments") %>% 
+  select(geo_ttl, amount)
+```
+
 
 ```{r}
   # Problem when join 
@@ -405,24 +500,6 @@ acfrs_city_pop %>% filter(government_ID %in% intersect_city_county) %>%
 
 ```
 Those whose names contain parentheses are actually cities. The part in side the parentheses indicates which county they belong to. 
-
-
-## Final City and County List
-
-```{r}
-state_gov <-readRDS("state_gov.RDS")
-
-# composition of city, county, state gov in general purpose
- # acfrs_governmentID %>% 
- #  left_join(pop_governmentID) %>% #drop_na(population) %>% 
- #  select(-c(state, STATE_AB, year)) %>% 
- #  arrange(desc(population)) %>% 
-
-# take out county 2569
-# filter(!government_ID %in% county_pop_census_acfrs$census_id) %>% 
-#    filter(!id %in% state_gov$id)
-   
-```
 
 
 

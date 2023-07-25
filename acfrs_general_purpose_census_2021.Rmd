@@ -323,9 +323,13 @@ acfrs_geoID_NO_population_21 <- acfrs_NOT_cityplace_21 %>%
   acfrs_geoID_NO_population_21 %>% write.csv("acfrs_geoID_NO_population_21.csv")
 
   
- other_entities <-  acfrs_NOT_cityplace_21 %>% 
+ other_entities_21 <-  acfrs_NOT_cityplace_21 %>% 
   filter(!id %in% county_pop_census_acfrs_21$id) %>%
     filter(!id %in% acfrs_geoID_NO_population_21$id) 
+ 
+ # why so few counties 2021? Use county 2020 to check if some counties are in the remaining other_entities
+ 
+ county_pop_census_acfrs_21 %>% filter(id %in% county_pop_census_acfrs_20$id)
 ```
 
 ```{r}
