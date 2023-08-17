@@ -96,7 +96,9 @@ acfrs_state_2021 <- acfrs_general_purpose_21 %>% filter(str_detect(name, "(state
 
 ### State from Census 2020
 ```{r}
-census_state_2020 <- census_all_2020 %>% filter(sumlev == 40)
+census_state_2020 <- census_all_2020 %>% filter(sumlev == 40) %>% 
+  mutate(FIPS = state, 
+         FIPS = ifelse(nchar(FIPS) == 1, paste0(0, FIPS), FIPS))
  
 ```
 
@@ -217,7 +219,16 @@ rename(state.abb = state)
 ```{r}
 census_county_2020 <-  census_all_2020 %>% 
    filter(sumlev == 050) %>% # county level
-  rename(county_code = county) 
+  rename(county_code = county) %>% 
+  mutate(county_code = case_when(nchar(county_code) == 1 ~ paste0(0,0, county_code),
+                                 nchar(county_code) == 2 ~ paste0(0, county_code),
+                                 nchar(county_code) == 3 ~ as.character(county_code)),
+                                
+
+               state = case_when(nchar(state) == 1 ~ paste0(0, state),
+                                 TRUE ~ as.character(state)),
+         FIPS = paste0(state, county_code))
+
 
 # Check special cases: 
 city_as_county_census <- census_county_2020 %>% 

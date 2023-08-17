@@ -127,15 +127,16 @@ acfrs_state_2020 <- acfrs_general_purpose %>% filter(str_detect(name, "(state of
 
 ### State from Census 2020
 ```{r}
-census_state_2020 <- census_all_2020 %>% filter(sumlev == 40)
- 
+census_state_2020 <- census_all_2020 %>% filter(sumlev == 40) %>% 
+  mutate(FIPS = state, 
+         FIPS = ifelse(nchar(FIPS) == 1, paste0(0, FIPS), FIPS))
+
 ```
 
 ### Joining acfrs states & census states: state_gov_2020
 ```{r}
 state_gov_2020 <- acfrs_state_2020 %>% left_join(census_state_2020) %>% 
-  select(-c(27:33, state.name)) %>% 
-  mutate(geoID = "")
+  select(-c(27:33, state.name)) 
 
 state_gov_2020 %>% write.csv("output/state_gov_2020.csv")
 ```
@@ -252,7 +253,17 @@ rename(state.abb = state)
 ```{r}
 census_county_2020 <-  census_all_2020 %>% 
    filter(sumlev == 050) %>% # county level
-  rename(county_code = county)
+  rename(county_code = county) %>% 
+  mutate(county_code = case_when(nchar(county_code) == 1 ~ paste0(0,0, county_code),
+                                 nchar(county_code) == 2 ~ paste0(0, county_code),
+                                 nchar(county_code) == 3 ~ as.character(county_code)),
+                                
+
+               state = case_when(nchar(state) == 1 ~ paste0(0, state),
+                                 TRUE ~ as.character(state)),
+         FIPS = paste0(state, county_code))
+         
+  
 
 # Check special cases: 
 city_as_county_census <- census_county_2020 %>% 
