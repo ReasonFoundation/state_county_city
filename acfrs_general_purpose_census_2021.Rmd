@@ -13,6 +13,7 @@ knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE)
 options(scipen = 999)
 library(tidyverse)
 library(dplyr)
+library(janitor)
 library(DT)
 ```
 # Tasks & Challenges 
@@ -105,7 +106,7 @@ state_gov_2021 <- acfrs_state_2021 %>% left_join(census_state_2020) %>%
   select(-c(27:33, state.name)) %>% 
   mutate(geoID = "")
 
-state_gov_2021 %>% write.csv("state_gov_2021.csv")
+state_gov_2021 %>% write.csv("output/state_gov_2021.csv")
 ```
 
 
@@ -195,8 +196,7 @@ acfrs_city_place_pop_21 <- acfrs_general_purpose_21 %>%
 # macon-bibb county pop is correct --> why???
 #acfrs_city_pop %>% filter(str_detect(name, "county"))
 
-acfrs_city_place_pop_21 %>% write.csv("acfrs_city_place_pop_21.csv")
-acfrs_city_place_pop %>% filter(str_detect(city_place, "town"))
+acfrs_city_place_pop_21 %>% write.csv("output/city_place_gov_21.csv")
 ```
 
 # Extracting counties
@@ -217,7 +217,7 @@ rename(state.abb = state)
 ```{r}
 census_county_2020 <-  census_all_2020 %>% 
    filter(sumlev == 050) %>% # county level
-  rename(county_code = county) %>% 
+  rename(county_code = county) 
 
 # Check special cases: 
 city_as_county_census <- census_county_2020 %>% 
@@ -300,7 +300,7 @@ county_pop_census_acfrs_21 <- acfrs_county_parish_borough_21 %>%
             arrange(desc(population)) %>% 
             drop_na(population) 
 
-county_pop_census_acfrs_21 %>% write.csv("county_pop_census_acfrs_21.csv")
+county_pop_census_acfrs_21 %>% write.csv("output/county_gov_21.csv")
 ```
 
 # Remaining acfrs_NOT_cityplace_NOT_county:  acfrs_NOT_cityplace less county_pop_census_acfrs
@@ -310,20 +310,21 @@ acfrs_geoID_NO_population_21 <- acfrs_NOT_cityplace_21 %>%
   filter(!id %in% county_pop_census_acfrs_21$id) %>%  # filter out counties
   
   # join again with the middle file link governmentID and geoID
-  left_join(governmentID_geoID) %>% # middle file
-  drop_na(geoID) %>% #%>% 
+  left_join(middle_file_governmentID_geoID) %>% # middle file
+  drop_na(geoID) %>% 
   
   mutate(original_name = str_to_lower(original_name)) #%>% 
   #select(-c(27:30)) %>% 
 
+  # write result
+  acfrs_geoID_NO_population_21 %>% write.csv("output/acfrs_geoID_NO_population_21.csv")
+
   # check how many of these are town
+acfrs_geoID_NO_population_21 %>% 
   filter(str_detect(original_name, "(township of)|(town of)"))
 
   
-  acfrs_geoID_NO_population_21 %>% write.csv("acfrs_geoID_NO_population_21.csv")
-
-  
- other_entities_21 <-  acfrs_NOT_cityplace_21 %>% 
+other_entities_21 <-  acfrs_NOT_cityplace_21 %>% 
   filter(!id %in% county_pop_census_acfrs_21$id) %>%
     filter(!id %in% acfrs_geoID_NO_population_21$id) 
  
@@ -406,22 +407,6 @@ Those whose names contain parentheses are actually cities. The part in side the 
 
 ## Final City and County List
 
-```{r}
-state_gov <-readRDS("state_gov.RDS")
-
-# composition of city, county, state gov in general purpose
- # acfrs_governmentID %>% 
- #  left_join(pop_governmentID) %>% #drop_na(population) %>% 
- #  select(-c(state, STATE_AB, year)) %>% 
- #  arrange(desc(population)) %>% 
-
-# take out county 2569
-# filter(!government_ID %in% county_pop_census_acfrs$census_id) %>% 
-#    filter(!id %in% state_gov$id)
-   
-```
-
-
 
 Lastly, take 15 who are actually counties out of the cities list. 
 ```{r}
@@ -441,79 +426,3 @@ datatable(acfrs_city_pop_final)
 ```
 
 
-```{r}
-# missing Philadelphia PA
-readRDS("data/data_from_dbsite_2021.RDS") %>% 
-   filter(id %in% top10_city_2020$id) %>% write.csv("top10_city_2021.csv")
-```
-
-The list of city and county contains `r nrow(acfrs_city_pop_final)` entities. 
-
-Another approach: 
-
-Subtract all states and counties from general purpose
-
-```{r}
-state_gov <- readRDS("state_gov.RDS")
-counties <- readRDS("counties.RDS") 
-
-gen_purpose <- readRDS("data/data_from_dbsite_2020.RDS") %>% 
-  filter(category == "General Purpose")  
-  
-gen_purpose %>% 
-  mutate(id = as.character(id)) %>% 
-  # take out state gov
-  filter(!id %in% state_gov$id) %>% 
-  
-  # take out county %>% 
-  filter(!id %in% counties$id.x)
-  
-  # check id in city and county
-
-length(setdiff(acfrs_city_pop_final$id, counties$id.x))
-
-#over lapping city and county
-length(intersect(acfrs_city_pop_final$id, counties$id))
-  
-```
-
-```{r}
-nrow(counties)
-slices <- c(51, nrow(counties), nrow(gen_purpose) - nrow(counties))
-lbls <- c("state", "county", "city and township")
-
-lbls <- paste(lbls,":", slices, "entities")
-pie(slices, labels = lbls, main="Share of entities in General Purpose")
-
-```
-
-
-```{r}
-slices <- c(51, nrow(counties), nrow(acfrs_city_pop_final), nrow(gen_purpose) - nrow(counties)-nrow(acfrs_city_pop_final))
-lbls <- c("state", "county", "city and township \nwith pop data", "city and township \nw/o pop data")
-
-lbls <- paste(lbls,":", slices, "entities")
-pie(slices, labels = lbls, main="Share of entities in General Purpose with \nand w/o population data")
-```
-
-```{r}
-# general purpose w/o pop data:
-gen_purpose %>% 
-  filter(!id %in% state_gov$id) %>% 
-  filter(!id %in% counties$id.x) %>% 
-  filter(!id %in% acfrs_city_pop_final$id) %>% 
-  select(id, name, state, total_liabilities, net_pension_liability) %>% 
-  # 
-   # filter(total_liabilities > 500000000) %>% # 33 entities is 5 hundred mil a resonable cut? Using total or using net_pension
-   # arrange(desc(total_liabilities)) -> t_1
-
-# Using total or using net_pension
-  # arrange(desc(net_pension_liability)) %>% 
-  # filter(net_pension_liability > 100000000) -> t_2# 42
-
-# using both: 
-  filter(total_liabilities > 500000000 & net_pension_liability > 100000000) -> t_3 # 23 total_lia more than 500 mil & net pen sion more than 100 mil
-
-# Manually adding population data to entities with total_liability greater than 500 mil
-  datatable(t_1)
-```

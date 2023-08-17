@@ -137,7 +137,7 @@ state_gov_2020 <- acfrs_state_2020 %>% left_join(census_state_2020) %>%
   select(-c(27:33, state.name)) %>% 
   mutate(geoID = "")
 
-state_gov_2020 %>% write.csv("state_gov_2020.csv")
+state_gov_2020 %>% write.csv("output/state_gov_2020.csv")
 ```
 
 
@@ -156,9 +156,6 @@ census_all_2020 %>%
   filter(str_detect(name, "silver spring"))
 
 ```
-
-
-
 
 
 ```{r}
@@ -227,8 +224,8 @@ acfrs_city_place_pop_20 <- acfrs_general_purpose %>%
 # macon-bibb county pop is correct --> why???
 #acfrs_city_pop %>% filter(str_detect(name, "county"))
 
-acfrs_city_place_pop_20 %>% write.csv("acfrs_city_place_pop_20.csv")
-acfrs_city_place_pop %>% filter(str_detect(city_place, "town"))
+acfrs_city_place_pop_20 %>% write.csv("output/city_place_gov_20.csv")
+
 
 # check some city as county - are they included in list acfrs_city_place_pop_20?
 #Yes: baltimore city MD, alexandria city VA
@@ -246,7 +243,7 @@ Acfrs general purpose excluding cities and places
 # risk of matching my name: identical names in different state --> wrong join
 
 acfrs_NOT_cityplace <- acfrs_general_purpose %>% # total 12,231
-  filter(!id %in% acfrs_city_place_pop$id) %>%  # 5121 obs, excludes 7110 in city list above
+  filter(!id %in% acfrs_city_place_pop_20$id) %>%  # 5121 obs, excludes 7110 in city list above
 rename(state.abb = state)
 ```
 
@@ -255,7 +252,7 @@ rename(state.abb = state)
 ```{r}
 census_county_2020 <-  census_all_2020 %>% 
    filter(sumlev == 050) %>% # county level
-  rename(county_code = county) %>% 
+  rename(county_code = county)
 
 # Check special cases: 
 city_as_county_census <- census_county_2020 %>% 
@@ -339,7 +336,7 @@ county_pop_census_acfrs_20 <- acfrs_county_parish_borough %>%
             arrange(desc(population)) %>% 
             drop_na(population) 
 
-county_pop_census_acfrs_20 %>% write.csv("county_pop_census_acfrs_20.csv")
+county_pop_census_acfrs_20 %>% write.csv("output/county_gov_20.csv")
 ```
 
 # Remaining acfrs_NOT_cityplace_NOT_county:  acfrs_NOT_cityplace less county_pop_census_acfrs
@@ -349,7 +346,7 @@ acfrs_geoID_NO_population_20 <- acfrs_NOT_cityplace %>%
   filter(!id %in% county_pop_census_acfrs_20$id) %>%  # filter out counties
   
   # join again with the middle file link governmentID and geoID
-  left_join(governmentID_geoID) %>% # middle file
+  left_join(middle_file_governmentID_geoID) %>% # middle file
   drop_na(geoID) %>% #%>% 
   
   mutate(original_name = str_to_lower(original_name)) #%>% 
@@ -359,7 +356,7 @@ acfrs_geoID_NO_population_20 <- acfrs_NOT_cityplace %>%
   #filter(str_detect(original_name, "(township of)|(town of)"))
 
   
-  acfrs_geoID_NO_population_20 %>% write.csv("acfrs_geoID_NO_population_20.csv")
+  acfrs_geoID_NO_population_20 %>% write.csv("output/acfrs_geoID_NO_population_20.csv")
 
   
  other_entities_20 <-  acfrs_NOT_cityplace %>% 
