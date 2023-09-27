@@ -1,0 +1,140 @@
+---
+title: "draft"
+output: html_document
+date: "2023-09-18"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(DT)
+
+```
+
+```{r}
+# as of Sep 18, 2023
+acfrs_2020county <- read_csv("output/county_gov_20.csv") %>% select(state.abb, name, id)
+
+acfrs_2021county <- read_csv("output/county_gov_21.csv") %>% select(state.abb, name, id)
+
+census_3144county <- read_csv("census_documents/census_3144county_2020.csv") %>% select(state.abb, name, population)
+
+#====>
+acfrs_2021county %>%#filter(state.abb == "CT")
+  filter(name == "blanco county")
+
+acfrs_general_purpose %>% filter(name == "blanco county")
+
+missingcounty_2020 <- census_3144county %>% left_join(acfrs_2020county) %>% 
+  filter(is.na(id))  #filter(str_detect(name, "(?i)la paz"))
+  
+
+missingcounty_2021 <- census_3144county %>% left_join(acfrs_2021county) %>% 
+  filter(is.na(id)) 
+
+setdiff(missingcounty_2021, missingcounty_2020) %>% write.csv("missingcounty_2020found_2021NOTfound.csv")
+
+```
+
+```{r}
+missint_tx_2020 <- missingcounty_2020 %>% filter(state.abb == "TX")
+missint_tx_2021 <- missingcounty_2021 %>% filter(state.abb == "TX")
+
+
+setdiff(missint_tx_2021, missint_tx_2020) %>% arrange(desc(population))
+
+write.csv("missint_tx_2021.csv")
+```
+# PA
+```{r}
+missint_pa_2020 <- missingcounty_2020 %>% filter(state.abb == "PA")
+missint_pa_2021 <- missingcounty_2021 %>% filter(state.abb == "PA")
+
+```
+
+## Texas
+
+```{r}
+tx_county_census <- census_3144county %>% filter(state.abb == "TX")
+
+tx_acfrs_2020 <- read_csv("output/county_gov_20.csv") %>% select(state.abb, name, id) %>% filter(state.abb == "TX") 
+
+tx_acfrs_2021 <- read_csv("output/county_gov_21.csv") %>% select(state.abb, name, id) %>% filter(state.abb == "TX")
+
+
+tx_county_census %>% 
+  left_join(tx_acfrs_2020) %>% 
+  mutate(missing_2020 = ifelse(is.na(id), "missing", "")) %>% 
+  left_join(tx_acfrs_2021, by = c("state.abb", "name")) %>% 
+  mutate(missing_2021 = ifelse(is.na(id.y), "missing", "")) %>% 
+  select(-id.y) %>% 
+  rename(id = id.x) -> tx_county_acfrs_20_21
+
+
+  write.csv("tx_county.csv")
+
+df <- data_frame(state.abb, state.name)
+
+tx_manual_checked <- readxl::read_excel("Missing_counties2020_manual_checked_july 21 2023.xlsx") %>% select(state.name, county, Notes, source) %>% 
+  left_join(df) %>% 
+  filter(state.name == "Texas") %>% rename(name = county) %>% select(-state.name)
+
+tx_county_status_Sep22 <- tx_county_acfrs_20_21 %>% left_join(tx_manual_checked) %>% 
+  mutate(Notes = replace_na(Notes, ""),
+         source = replace_na(source, ""))
+
+tx_county_status_Sep22 %>% 
+  filter(missing_2020 == "missing") %>% arrange(desc(population))
+select(state.abb, name, population) %>% write.csv("tx_county_uploadedfiles_missing20_21.csv")
+
+  write.csv(tx_county_status_Sep22, "tx_county_status_Sep22.csv")
+```
+
+## all
+```{r}
+census_3144county 
+
+county_acfrs_2020 <- read_csv("output/county_gov_20.csv") %>% select(state.abb, name, id) 
+
+county_acfrs_2021 <- read_csv("output/county_gov_21.csv") %>% select(state.abb, name, id) 
+
+
+census_3144county %>% 
+  left_join(county_acfrs_2020) %>% 
+  mutate(missing_2020 = ifelse(is.na(id), "missing", "")) %>% 
+  left_join(county_acfrs_2021, by = c("state.abb", "name")) %>% 
+  mutate(missing_2021 = ifelse(is.na(id.y), "missing", "")) %>% 
+  select(-id.y) %>% 
+  rename(id = id.x) -> county_acfrs_20_21
+
+
+df <- data_frame(state.abb, state.name)
+
+counties_manual_checked <- readxl::read_excel("Missing_counties2020_manual_checked_july 21 2023.xlsx") %>% select(state.name, county, Notes, source) %>% 
+  left_join(df) %>% 
+  rename(name = county) %>% select(-state.name)
+
+all_county_status_Sep22 <- county_acfrs_20_21 %>% left_join(counties_manual_checked) %>% 
+  mutate(Notes = replace_na(Notes, ""),
+         source = replace_na(source, "")) %>% group_by(state.abb) %>% arrange(state.abb, population)
+
+write.csv(all_county_status_Sep22, "all_county_status_Sep22.csv")
+
+# only view missing
+all_county_status_Sep22 %>% filter(missing_2020 =="missing" | missing_2021 =="missing") %>% 
+  write.csv("all_county_missing_Sep22.csv")
+
+
+  all_county_status_Sep22 %>% filter(missing_2021 == "missing") %>% select(Notes) %>% distinct() %>% 
+    mutate(Notes = case_when(Notes == "uploaded file to portal" ~ "uploaded files to portal",
+                             
+                             TRUE ~ Notes))
+  
+   "only till*" ~ "only available till*"
+  
+   
+   
+census_3144county %>% filter(state.abb == "AK")
+```
+

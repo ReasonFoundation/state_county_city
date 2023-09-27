@@ -218,7 +218,7 @@ rename(state.abb = state)
 
 ```{r}
 census_county_2020 <-  census_all_2020 %>% 
-   filter(sumlev == 050) %>% # county level
+   filter(sumlev == 050) %>% # county level, see: FunctionalStatusCodes_census.pdf
   rename(county_code = county) %>% 
   mutate(county_code = case_when(nchar(county_code) == 1 ~ paste0(0,0, county_code),
                                  nchar(county_code) == 2 ~ paste0(0, county_code),
@@ -253,6 +253,7 @@ acfrs_county_21 <- acfrs_NOT_cityplace_21 %>%
                           TRUE ~ name)) 
 ```
 
+
 ### Step 2: Special cases of county level 
 #### Louisiana
 
@@ -266,39 +267,41 @@ louisiana_parish_21 <- acfrs_NOT_cityplace_21 %>%
 
 #### Alaska
 
-Not a single easy way to fill out counties and equivalents in Alaska. Census counts 30 counties in 3 types: Borough, Municipality, Census Area.
+Although it says here Alaska has 29 equivalent counties: https://www.census.gov/geographies/reference-files/2010/geo/state-local-geo-guides-2010/alaska.html
+In fact, when using Census 2020 & filter for SUMLEV = 050 (county gov), AK has 30 equivalent counties. 
 
-```{r}
-# Get Alaska counties in census
-alaska_county_census <- census_county_2020 %>% 
-  filter(state.name == "Alaska") %>% 
-  mutate(name = str_remove_all(name, "city and borough"), 
-         name = str_remove_all(name, "(borough)|(census area)|(municipality)"),
-         name = str_to_lower(name),
-         name = str_squish(name))
+Four consolidated governments, Anchorage, Juneau, Sitka, and Wrangell, which are classified as municipal governments + 11 census area + borough.
+
+```{r testing}
+# get equivalent counties form census = 30
+alaska_county_census <- census_county_2020 %>% filter(state.abb == "AK") %>% 
+  #change some names to match with acfrs names
+  
+  mutate(name = case_when(name ==  "skagway municipality" ~ "skagway",
+                         name == "yakutat city and borough" ~ "yakutat borough",
+                         TRUE ~ name))
+  
+
+# Alaska counties in Acfrs:
+alaska_county_acfrs_21 <- acfrs_NOT_cityplace_21 %>% filter(state.abb == "AK") %>% 
+  filter(!name %in% ("state of alaska")) %>% 
+  filter(!str_detect(name, "(trib)|(village)"))
+
+"anchorage municipality", "juneau city and borough","sitka city and borough", "skagway municipality", "wrangell city and borough", "yakutat city and borough"
 
 #NOTE: Both city and borough:
 #"sitka city and borough", "wrangell city and borough", "yakutat city and borough"
-```
 
-```{r}
-# use the list of Alaska counties in census to find counties in acfrs:
-alaska_borough_acfrs_21 <- acfrs_NOT_cityplace_21 %>% 
-  filter(state.abb == "AK") %>% 
-  mutate(name = str_remove_all(name, "borough"),
-         name = str_to_lower(name),
-         name = str_squish(name)) %>% 
+# join to get population into acfrs: 
 
-  filter(name %in% alaska_county_census$name) %>% arrange(name)
-
+alaska_county_acfrs_census_21 <- alaska_county_acfrs_21 %>% left_join(alaska_county_census)
 ```
 
 ### Step 3: Binding counties, parish, borough together
 ```{r}
-# first, join entities in ACFRs contain words "County" + Louisiana that contain word "Parish" + alaska that contain "Borough" in their names
+# first, join entities in ACFRs contain words "County" + Louisiana that contain word "Parish" 
 acfrs_county_parish_borough_21 <- rbind(acfrs_county_21, louisiana_parish_21) %>% 
-                              rbind(alaska_borough_acfrs_21) %>% 
-  
+                              
   # cleaning to match with names in census
   mutate(name = str_remove_all(name, " fiscal court"))
 ```
@@ -308,10 +311,14 @@ acfrs_county_parish_borough_21 <- rbind(acfrs_county_21, louisiana_parish_21) %>
 # join acfrs with census population by = c("state.abb", "county")
 county_pop_census_acfrs_21 <- acfrs_county_parish_borough_21 %>% 
             left_join(census_county_2020, by = c("state.abb", "name")) %>% 
+  
+  # bind with Alaska
+            rbind(alaska_county_acfrs_census_21) %>% 
             arrange(desc(population)) %>% 
             drop_na(population) 
-
+  
 county_pop_census_acfrs_21 %>% write.csv("output/county_gov_21.csv")
+
 ```
 
 # Remaining acfrs_NOT_cityplace_NOT_county:  acfrs_NOT_cityplace less county_pop_census_acfrs

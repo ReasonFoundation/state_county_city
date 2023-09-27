@@ -17,7 +17,7 @@ library(DT)
 ```
 # Tasks & Challenges 
 
-* Entity names in Acfrs database are not obvious, i.e., does not always contain a certain word to indicate it's government type (city, town, county). Even some names contains a certain word such as "county", it actually a town. For example: "halifax county" in acfrs is in fact a town (population 1000) of Halifax county (pop more than 30k)
+* Entity names in the original Acfrs database are not obvious, i.e., does not always contain a certain word to indicate it's government type (city, town, county). Even some names contains a certain word such as "county", it actually a town. For example: "halifax county" in acfrs is in fact a town (population 1000) of Halifax county (pop more than 30k)
 
 *ACFRs data has government_id (which is called census_id in the ACFRs portal). This is government unit identifier, and is not geo_id that are often used in many census datasets.
 
@@ -257,13 +257,12 @@ census_county_2020 <-  census_all_2020 %>%
   mutate(county_code = case_when(nchar(county_code) == 1 ~ paste0(0,0, county_code),
                                  nchar(county_code) == 2 ~ paste0(0, county_code),
                                  nchar(county_code) == 3 ~ as.character(county_code)),
-                                
-
+                        
                state = case_when(nchar(state) == 1 ~ paste0(0, state),
                                  TRUE ~ as.character(state)),
          FIPS = paste0(state, county_code))
          
-  
+  write.csv(census_county_2020, "census_documents/census_3144county_2020.csv")
 
 # Check special cases: 
 city_as_county_census <- census_county_2020 %>% 
@@ -286,6 +285,8 @@ acfrs_county <- acfrs_NOT_cityplace %>%
   # correct some simple spelling errors
   mutate(name = case_when(name == "dona ana county" ~ "doña ana county", 
                           TRUE ~ name)) 
+
+acfrs_county %>% filter(str_detect(name, "(?i)la paz"))
 ```
 
 ### Step 2: Special cases of county level 
@@ -348,6 +349,7 @@ county_pop_census_acfrs_20 <- acfrs_county_parish_borough %>%
             drop_na(population) 
 
 county_pop_census_acfrs_20 %>% write.csv("output/county_gov_20.csv")
+county_pop_census_acfrs_20 %>% filter(str_detect(name, "(?i)la paz"))
 ```
 
 # Remaining acfrs_NOT_cityplace_NOT_county:  acfrs_NOT_cityplace less county_pop_census_acfrs
