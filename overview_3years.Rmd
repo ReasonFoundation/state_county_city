@@ -314,7 +314,7 @@ place_division_3years <- place_division_gov_22 %>%
   rbind(place_division_gov_21) %>% 
   rbind(place_division_gov_20)
 
-place_division_3years %>% write.csv("place_division_3years.csv")
+place_division_3years %>% write.csv("output/place_division_3years.csv")
 ```
 
 
@@ -325,7 +325,7 @@ city_gov_3years <- city_gov_22 %>%
   rbind(city_gov_21) %>% 
   rbind(city_gov_20)
 
-city_gov_3years %>% write.csv("city_gov_3years.csv")
+city_gov_3years %>% write.csv("output/city_gov_3years.csv")
 datatable(city_gov_3years)
 ```
 
@@ -394,7 +394,7 @@ city_top100_3years <- acfr_top_city_21 %>%
   # add_row(state.abb = "MN", name = "st paul", geo_id = "2758000") %>% 
   # add_row(state.abb = "NJ", name = "jersey city", geo_id = "3436000") 
 
-city_top100_3years %>% write.csv("top100_city_3years.csv")
+city_top100_3years %>% write.csv("output/top100_city_3years.csv")
 
 datatable(city_top100_3years)
 ```
