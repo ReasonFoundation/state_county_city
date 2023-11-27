@@ -1,0 +1,185 @@
+---
+title: "Census"
+output: html_document
+date: "2023-11-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+*The [census population data use GEOIDs](https://www.census.gov/programs-surveys/geography/guidance/geo-identifiers.html#:~:text=The%20full%20GEOID%20for%20many,codes%2C%20in%20which%20they%20nest.), which are "numeric codes that uniquely identify all administrative/legal and statistical geographic areas for which the Census Bureau tabulates data". 
+
+
+https://ask.census.gov/prweb/PRServletCustom/app/ECORRAsk2_/YACFBFye-rFIz_FoGtyvDRUGg1Uzu5Mn*/!STANDARD?pzuiactionzzz=CXtpbn0rTEpMcGRYOG1vS0tqTFAwaENUZWpvM1NNWEMzZ3p5aFpnWUxzVmw0TjJoOEprcE5BQndaM1Vid1FKbWRibnZu*
+
+The GEOIDs in .csv downloads from data.census.gov contain nine extra characters in the beginning that identify the:
+
+3-digit summary level
+2-digit geographic variant
+2-digit geographic component
+“US”
+
+The 14-digit “GEO.ID” for Harris County, TX is “0500000US48201” where 
+“050” represents the summary level of the data, 
+“0000” represents the 2-digit geographic variant and the 2-digit geographic component, 
+“US” represents the United States, 
+“48” represents the state of Texas 
+“201” represents Harris County.
+
+
+## Census All 81,395
+
+Source of the census dataset (sub-est2022.csv): https://www2.census.gov/programs-surveys/popest/datasets/2020-2022/
+
+Key to variables in sub-est2022.csv: census_documents/SUB-EST2022_dictionary.pdf
+
+Understanding Geographic Identifiers (GEOIDs): https://www.census.gov/programs-surveys/geography/guidance/geo-identifiers.html#:~:text=The%20full%20GEOID%20for%20many,codes%2C%20in%20which%20they%20nest.
+
+Cartographic Boundary File Summary Level Codes: https://www.census.gov/programs-surveys/geography/technical-documentation/naming-convention/cartographic-boundary-file/carto-boundary-summary-level.html
+
+Functional Status Code Description: FunctionalStatusCodes_census.pdf
+Individual Government ID File Record Layout: Individual Government ID File Record Layout.pdf
+
+
+
+```{r}
+df_state <- data.frame(state.abb, state.name) %>% 
+  add_row(state.abb = "DC", state.name = "District of Columbia")
+
+# Use population estimatesbase2020
+census_all <- rio::import(here::here("data/census", "sub-est2022.csv")) %>% 
+   clean_names() %>% 
+  select(-c(primgeo_flag, popestimate2020, popestimate2021, popestimate2022)) %>% 
+  rename (state.name = stname,
+          population = estimatesbase2020) %>% 
+   mutate(name = str_to_lower(name),
+          name = str_remove(name,"\\.|'|‘"),
+         # name = str_remove_all(name, "township"),
+         # name = str_remove_all(name, "city|town|village"),
+          name = str_trim(name)) %>% 
+  left_join(df_state) %>% 
+  
+  
+    mutate(place = as.character(place),
+           cousub = as.character(cousub),
+           state = as.character(state),
+           county = as.character(county)) %>% 
+# adding leading 0 to the FIPS code. Use these to create geo_id 
+    mutate(state = case_when(nchar(state) == 1 ~ paste0("0", state),
+                              nchar(state) == 2 ~ state),
+           county = case_when(nchar(county) == 1 ~ paste0("00", county),
+                              nchar(county) == 2 ~ paste0("0", county),
+                              nchar(county) == 3 ~ as.character(county)),
+           
+           place = case_when(nchar(place) == 2 ~ paste0("000", place),
+                           nchar(place) == 3 ~ paste0("00", place),
+                           nchar(place) == 4 ~ paste0("0", place),
+                           nchar(place) == 5 ~ place),
+           
+         #minor civil division FIPs code
+           cousub = case_when(nchar(cousub) == 1 ~ paste0("0000", cousub),
+                            nchar(cousub) == 2 ~ paste0("000", cousub),
+                           nchar(cousub) == 3 ~ paste0("00", cousub),
+                           nchar(cousub) == 4 ~ paste0("0", cousub),
+                           nchar(cousub) == 5 ~ cousub)) %>% 
+           
+         # create geo_id 
+         mutate(geo_id = case_when(
+           sumlev == 40 ~ state, # state
+           sumlev == 50 ~ paste0(state, county), # county
+           sumlev == 061 ~ paste0(state, cousub), #minor civil division
+           sumlev == 162 ~ paste0(state, place), # incorporated place
+           sumlev == 170 ~ paste0(state, concit), #consolidated city
+           sumlev == 172 ~ paste0(state, place) # Consolidated city -- place within consolidated city
+                              )) 
+saveRDS(census_all, "census_all.RDS")
+
+```
+
+# Census counties
+
+```{r}
+census_county <- census_all %>% 
+   filter(sumlev == 050) 
+
+saveRDS(census_county, "census_county.RDS")
+
+# Check special cases in Census county: 
+# 41 cities & district of columbia categorized as county
+census_county %>% 
+  filter(!str_detect(name, "(borough)|(county)|(parish)|(planning regio)|(census area)|(municipality)")) 
+# Note: Planning Regio, lacking "n" at last, to include all Planning Region in CT
+# Louisiana has 64 entities "Parish"
+# Alaska has 30 entities " 17 Borough", "Census Area", "Municipality"
+# Connecticut has 9 entities "Planning Region"
+```
+
+## Top 100 county Census 2021
+```{r}
+#Top 100 county Census 2021: 
+   census_county_top100_2021 <- census_all %>% 
+   filter(sumlev == 050) %>% arrange(desc(popestimate2021)) %>% 
+     filter(funcstat %in% c("A", "C")) %>% 
+     filter(!name %in% c("kings county", "queens county", "new york county", "bronx county")) %>% 
+     slice(1:100) %>% 
+select(state.abb, name, popestimate2021, funcstat, geo_id) 
+  
+saveRDS(census_county_top100_2021, "census_county_top100_2021.RDS")
+   
+#excluding these from the top 100 county by population as they are non-functioning legal entity: 
+#RI providence county
+#MA middlesex county, worcester county, essex county, suffolk county
+
+#??? excluding NY "kings county", "queens county", "new york county", "bronx county", 
+
+# In top 100 county list, 7 are :Active government consolidated with another government with a single set of
+# officials
+   
+# [1] "philadelphia county"  "duval county"         "marion county"        "san francisco county"
+# [5] "jefferson county"     "denver county"        "davidson county"  
+```
+
+
+# Incorporated Place & Minor Civil Division: 
+
+From "Understanding Place in Census.pdf":
+Incorporated Places
+• Legally bounded entity
+• Cities, boroughs, towns, or villages, depending on the state
+• Over 19,000 incorporated places
+
+Includes:
+– Cities
+– Towns (except in the six New England states, New York, and Wisconsin)
+– Villages
+– Boroughs (except in New York and Alaska)
+Does not include:
+– Towns/townships in the Northeast and Midwest
+
+```{r}
+census_incorporatedPlace_minorDivision <- census_all %>% 
+  filter(sumlev %in% c(162, 061, 170, 172)) %>% 
+  rename(name_census = name) %>% 
+  distinct()
+
+saveRDS(census_incorporatedPlace_minorDivision, "census_incorporatedPlace_minorDivision.RDS")
+```
+
+# City
+
+```{r}
+#step 1: get census city list - 10,192 cities
+census_city <- census_all %>% filter(sumlev == 162) %>% filter(str_detect(name, "city$"))
+saveRDS(census_city, "census_city.RDS")
+# 100 cities
+census_city_top100_2021 <- census_city %>% 
+  filter(funcstat %in% c("A", "C")) %>% 
+  arrange(desc(popestimate2021)) %>% slice(1:100) %>% 
+  mutate(name = str_remove_all(name, " city$"),
+         name = str_trim(name)) %>% 
+  select(state.abb, name, popestimate2021, geo_id) 
+  
+  saveRDS(census_city_top100_2021, "census_city_top100_2021.RDS")
+```
+

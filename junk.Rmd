@@ -1,0 +1,129 @@
+---
+title: "junk"
+output: html_document
+date: "2023-11-13"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Other approach
+
+## Step 1: Get polulation & geoID from Census Cities & Towns
+
+List of cities and places with geoID & population from file "City and Town Mapping.xlsx". We will use this geoID to join with a middle file that has geoID and government_ID. From there get to acfrs data, which has government_ID. 
+
+ACFRs: government_ID
+City and Town Mapping, sheet 3: government_ID and geoID
+estpop_22: geoID
+
+Don't use the above file "sub-est2022.csv" because that file does not have geoID. Just use that to check how many cities and places
+
+```{r}
+#Marc emailed this data Feb2 2022: using 017 Census master file data to map to the 2020 Census Population data using FIPS Codes. GEO_ID: Census identifiers that point to population of places in US
+city_place_census_2020 <- rio::import(here::here("data", "City and Town Mapping.xlsx"), sheet = 2) %>% 
+rename(population = `!!Total:`, 
+       geoID = GEO_ID) %>% 
+  separate(NAME, c("city_place", "state.name"), sep = ",")  %>%  
+  mutate(state.name = str_trim(state.name), 
+         city_place = str_trim(city_place),
+         city_place = str_to_lower(city_place)) %>% 
+  left_join(df_state) %>% drop_na() 
+ 
+```
+
+There are `r nrow(pop)` observations in this data set. 
+
+## Step 2: Get a middle file that has government_ID and geoID
+
+ACFRs database uses government ID (enumeration ID of local governments), but data does not use FIP codes, and does not have geo_id. 
+We use a Census master file data to map ACFRs to the 2020 Census Population data by FIPS Codes.
+
+```{r}
+#government_ID (used in ACFRs): enumeration ID of local governments. 
+# Note that population data is ACFRs portal is 2017 -> don't use
+# Note: census_id, which means government_id in Acfrs are numeric --> can be turn to scientific notation in R --> will not match --> need to avoid scientific notation. 
+
+# This middle file has both government_ID and geo_id
+middle_file_governmentID_geoID <- rio::import(here::here("data", "City and Town Mapping.xlsx"), sheet = 3) %>% 
+  select(government_ID, `INFERRED GEO_ID`, NAME, CITY, STATE_AB, COUNTY_AREA_NAME)  %>% 
+  rename(geoID = `INFERRED GEO_ID`,  # Marc created INFERRED GEO_ID, which meant to be geoID
+         original_name = NAME, 
+         state.abb = STATE_AB) %>% 
+  mutate(original_name = str_to_lower(original_name))
+```
+
+## Step 3: Linking census population to middle file government_ID and geoID
+city_place_census_2020 has population & geoID 
+middle_file_governmentID_geoID has geoID and government_ID
+ACFRs has governement_ID 
+```{r}
+# join city_place_census_2020 with the middle file to get population into that middle file. 
+governmentID_geoID_population <- city_place_census_2020 %>% # has population
+  left_join(middle_file_governmentID_geoID) %>% # middle file
+  drop_na(government_ID) 
+
+# governmentID_geoID_population now has population, governement_ID and geoID
+```
+
+## Step 4: Join ACFRs to census population by government_ID
+
+* Take all acfrs general purpose, less states, to join with governmentID_geoID_population. The result would be acfrs cities and places with geoID and population data. 
+
+```{r}
+# join acfrs general purpose with city and town population data that has governmentID
+acfrs_city_place_pop_20 <- acfrs_general_purpose_20 %>% 
+  filter(!id %in% state_gov_2020$id) %>% # take out state entities 
+
+  left_join(governmentID_geoID_population) %>% 
+  drop_na(population) %>%   # 7110 obs
+  select(state.abb, 2:27, population, city_place) 
+#does this include state and counties? No. This list is only city and place
+
+#Even some names contains word "county", it actually a town. For example: "halifax county" in acfrs is in fact a town (population 1000) of Halifax county (pop more than 30k)
+
+
+acfrs_city_place_pop_20 %>% write.csv("output/city_place_gov_20.csv")
+
+
+# check some city as county - are they included in list acfrs_city_place_pop_20?
+#Yes: baltimore city MD, alexandria city VA
+
+acfrs_city_place_pop_20 %>% 
+  filter(str_detect(name, "(alexandria)|(baltimore)"))
+
+acfrs_city_place_pop_20 %>% filter(str_detect(name, "county"))
+
+governmentID_geoID_population %>% filter(str_detect(city_place, "county"))
+```
+
+
+
+
+
+# Remaining acfrs_NOT_cityplace_NOT_county:  acfrs_NOT_cityplace_20 less county_pop_census_acfrs
+
+```{r}
+acfrs_geoID_NO_population_20 <- acfrs_NOT_cityplace_20 %>% 
+  filter(!id %in% county_pop_census_acfrs_20$id) %>%  # filter out counties
+  
+  # join again with the middle file link governmentID and geoID
+  left_join(middle_file_governmentID_geoID) %>% # middle file
+  drop_na(geoID) %>% #%>% 
+  
+  mutate(original_name = str_to_lower(original_name)) #%>% 
+  #select(-c(27:30)) %>% 
+
+  # check how many of these are town
+  #filter(str_detect(original_name, "(township of)|(town of)"))
+
+  
+  acfrs_geoID_NO_population_20 %>% write.csv("output/acfrs_geoID_NO_population_20.csv")
+
+  
+ other_entities_20 <-  acfrs_NOT_cityplace_20 %>% 
+  filter(!id %in% county_pop_census_acfrs_20$id) %>%
+    filter(!id %in% acfrs_geoID_NO_population_20$id) 
+```
+
