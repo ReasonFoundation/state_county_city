@@ -71,8 +71,8 @@ acfrs_state_2020 <- acfrs_general_purpose_20 %>%
 
 
 # state from census
-census_state <- census_all %>% filter(sumlev == 40) %>% 
-  select(state.abb, geo_id, population)
+# census_state <- census_all %>% filter(sumlev == 40) %>% 
+#   select(state.abb, geo_id, population)
 
 # Joining acfrs states & census states: state_gov_2020
 state_gov_2020 <- acfrs_state_2020 %>% select(-geo_id) %>% 

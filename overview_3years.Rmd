@@ -37,6 +37,13 @@ state_3years <- state_gov_2020 %>%
 
 datatable(state_3years)
 
+state_3years %>% write.csv("output/state_3years.csv")
+
+income <- rio::import(here::here("data", "Unemployment_median income.xlsx"), skip = 4)  %>% 
+  select(FIPS_Code, Median_Household_Income_2021) %>% 
+  rename(geo_id = FIPS_Code)
+  
+county_3years %>% left_join(income) %>% write.csv("output/county_3years_urbanicity_income.csv")
 ```
 
 
@@ -128,23 +135,130 @@ state_3years %>% #filter(state.abb == "CA")
   theme(axis.text.x = element_text(angle = 90)) 
 ```
 
+## State Urbanicity 
+
+```{r}
+mod_data_state <- state_3years %>% 
+  rename(urban_pop = x2020_urban_pop,
+         urban_pop_pct = x2020_pct_urban_pop) %>% 
+  mutate(net_pension_liability = net_pension_liability+1,
+         urban_pop = urban_pop+1) 
+
+mod_data_state %>% 
+  ggplot(aes(urban_pop, net_pension_liability))+
+  geom_point(color = "orange", alpha = 0.3) +
+  #scale_x_log10() +
+  #scale_y_log10()+
+  theme_minimal() +
+  labs(title = "Urbanicity & Net Pension Liability: Raw scale")
+```
+
+```{r}
+
+mod_data_state %>% 
+  ggplot(aes(urban_pop, net_pension_liability))+
+  geom_point(color = "orange", alpha = 0.3) +
+  scale_x_log10() +
+  scale_y_log10()+
+  theme_minimal() +
+  labs(title = "Urbanicity & Net Pension Liability: Log scales",
+       x = "Urban population",
+       y = "Net Pension Liability",
+       caption = "Log scales interpretation: For every 1% increase in urban population, there's a 1.27% increase in net pension liability ")
+  
+```
+
+```{r}
+mod_state <- lm(log(net_pension_liability) ~ log(urban_pop), data = mod_data_state)
+summary(mod_state)
+```
 
 # County
 
 ## All counties collected in 3 years 2020, 2021, 2022
 ```{r}
+income <- rio::import(here::here("data", "Unemployment_median income.xlsx"), skip = 4)  %>% 
+  select(FIPS_Code, Median_Household_Income_2021) %>% 
+  rename(geo_id = FIPS_Code)
+
 county_3years <- county_gov_20 %>% rbind(county_gov_21) %>% rbind(county_gov_22) %>% 
   select(-c(geo_id.x, government_id)) %>% 
-  rename(geo_id = geo_id.y) 
+  rename(geo_id = geo_id.y) %>%  left_join(income) %>% drop_na(Median_Household_Income_2021)
 
-#Checking
-
-# county_3years %>% select(state.abb, name, year, population) %>% 
-#   group_by(year) %>% 
-#   mutate(pop_accounted = sum(population)) %>% select(year, pop_accounted) %>% distinct() %>% 
-#   mutate(percent = round((pop_accounted/332031554)*100,1))
 datatable(county_3years)
+colnames(county_3years)
+  
+county_3years %>% 
+  write.csv("output/county_3years_urbanicity_income.csv")
 ```
+
+## Viz Urbanicity
+
+```{r}
+county_3years %>% 
+  ggplot(aes(pop_urb, net_pension_liability))+
+  geom_point(color = "cornflowerblue", alpha = 0.3) +
+  #scale_x_log10() +
+  #scale_y_log10()+
+  theme_minimal() +
+  labs(title = "County government: Urban population & Net Pension Liability/n Raw scale")
+```
+
+```{r}
+county_3years %>% 
+  ggplot(aes(pop_urb, net_pension_liability))+
+  geom_point(color = "cornflowerblue", alpha = 0.3) +
+  scale_x_log10() +
+  scale_y_log10()+
+  theme_minimal() +
+  labs(title = "County government: Urbanicity & Net Pension Liability: Log scales",
+       x = "Urban population",
+       y = "Net Pension Liability",
+       caption = "Log scales interpretation: For every 1% increase in urban population, there's a 0.42% increase in net pension liability")
+
+```
+
+```{r}
+mod_data_county <- county_3years %>% 
+  mutate(net_pension_liability = net_pension_liability+1,
+         pop_urb = pop_urb+1) %>% 
+  select(net_pension_liability, pop_urb) 
+
+mod_county <- lm(log(net_pension_liability) ~ log(pop_urb), data = mod_data_county)
+summary(mod_county)
+
+#Interpretation:
+#https://library.virginia.edu/data/articles/interpreting-log-transformations-in-a-linear-model
+
+```
+
+```{r, include=FALSE, eval=FALSE}
+plot(mod1, which = 3)
+# The trend line is even BUT the residual are clustered. ==> Violate the constant variance assumption --> the model is misspecified. 
+```
+
+## Viz Median income
+```{r inclue = FALSE, eval=FALSE}
+
+income_mod_data <- county_3years %>% left_join(income) %>% 
+ mutate(net_pension_liability = net_pension_liability +1)
+
+income_mod_data %>% 
+  ggplot(aes(Median_Household_Income_2021, net_pension_liability)) +
+  geom_point(color = "purple", alpha = .3) +
+  theme_minimal()+
+  scale_x_log10()+
+  scale_y_log10()+
+  labs(title = "County government: Median household income & Net pension liability",
+       caption = "Log scales interpretation: For every 1% increase in household median income,\nthere's a 6.3% increase in net pension liability")
+```
+
+```{r}
+income_mod_data
+income_mod_county <- lm(log(net_pension_liability) ~ log(Median_Household_Income_2021), data = income_mod_data)
+summary(income_mod_county)
+```
+
 
 ## The 100 most populous counties in 3 years:
 
@@ -169,11 +283,12 @@ acfrs_topcounty_20 <- county_3years %>%
   
 #these are counted as cities. Need to find in incorp_division_gov_21
 acfrs_top100county_20 <- place_division_gov_20 %>% 
+  add_column(pop_urb = NA, poppct_urb = NA) %>% 
   filter(name == "san francisco" & state.abb == "CA" | 
   name == "philadelphia" & state.abb == "PA" | 
   name == "jacksonville" & state.abb == "FL") %>% 
   # being processed
-  add_row(state.abb = "MA", name = "norfolk county", id = 116575, net_pension_liability = 0, population = 725999, year = 2020) %>% 
+  add_row(state.abb = "MA", name = "norfolk county", id = 116575, net_pension_liability = 0, population = 725999, year = 2020, pop_urb = NA, poppct_urb = NA) %>% 
   select(-c(name_census, government_id)) %>% 
   
   #bind with 96 top county 
@@ -188,11 +303,13 @@ acfrs_topcounty_21 <- county_3years %>%
   filter(geo_id %in% census_county_top100$geo_id) %>% filter(year == 2021)
   
 acfrs_top100county_21 <- place_division_gov_21 %>% 
+  add_column(pop_urb = NA, poppct_urb = NA) %>% 
   filter(name == "san francisco" & state.abb == "CA" | 
   name == "philadelphia" & state.abb == "PA" | 
   name == "jacksonville" & state.abb == "FL") %>% 
   # TODO: check will county to be processed in portal later. 
-  add_row(state.abb = "IL", name = "will county", id = 32790, net_pension_liability = 45000000, population = 697985, year = 2021) %>% select(-c(name_census, government_id)) %>% 
+  #add_row(state.abb = "IL", name = "will county", id = 32790, net_pension_liability = 45000000, population = 697985, year = 2021) %>% 
+  select(-c(name_census, government_id)) %>% 
   
   #bind with 96 top county 
   rbind(acfrs_topcounty_21) 
@@ -205,6 +322,7 @@ acfrs_topcounty_22 <- county_3years %>%
   filter(geo_id %in% census_county_top100$geo_id) %>% filter(year == 2022) 
 
 acfrs_top100county_22 <- place_division_gov_22 %>% 
+  add_column(pop_urb = NA, poppct_urb = NA) %>% 
   filter(name == "san francisco" & state.abb == "CA" | 
   name == "philadelphia" & state.abb == "PA" | 
   name == "jacksonville" & state.abb == "FL") %>% 
@@ -237,6 +355,7 @@ datatable(county_top100_3years)
 county_top100_3years %>% write.csv("output/acfrs_county_top100_3years.csv")
 
 
+colnames(county_top100_3years)
 ```
 ## Top 100 Counties: Net Pension Liabilities
 
@@ -327,6 +446,30 @@ city_gov_3years <- city_gov_22 %>%
 
 city_gov_3years %>% write.csv("output/city_gov_3years.csv")
 datatable(city_gov_3years)
+```
+
+```{r}
+#S1903 MEDIAN INCOME IN THE PAST 12 MONTHS (IN 2021 INFLATION-ADJUSTED DOLLARS)
+#2021: ACS 1-Year Estimates Subject Tables
+#https://data.census.gov/table/ACSST1Y2021.S1903?q=median%20household%20income%20by%20city%202021&g=010XX00US$0300000
+
+city_income <- rio::import(here::here("data/ACSST1Y2021.S1903_2023-12-29T105538/ACSST1Y2021.S1903-Data.csv"), skip = 1) %>% select(1, `Geographic Area Name`, `Estimate!!Median income (dollars)!!HOUSEHOLD INCOME BY RACE AND HISPANIC OR LATINO ORIGIN OF HOUSEHOLDER!!Households`) %>% 
+  rename(Median_Household_Income_2021 = `Estimate!!Median income (dollars)!!HOUSEHOLD INCOME BY RACE AND HISPANIC OR LATINO ORIGIN OF HOUSEHOLDER!!Households`
+         ) %>% 
+  mutate(
+         place = substring(Geography, 12, 16),
+         state = substring(Geography, 10, 11)) %>% 
+  select(-c(Geography, `Geographic Area Name`))
+
+
+city_gov_3years %>% left_join(city_income, by = c("place", "state")) %>% 
+  write.csv("output/city_3years_median_income.csv")
+  
+  
+
+city_income
+
+#by = c("geo_id" = "place", "state"
 ```
 
 ## The 100 most populous cities in 3 years
@@ -443,3 +586,23 @@ city_top100_3years %>% #filter(name == "jacksonville")
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 90)) 
 ```
+
+## Entities at risk
+1) Asset to liability ratio; 
+2) Unrestricted - currently do not collect this
+3) Current ratio: Current Assets / Current Liabilities --> Do not have current assets
+
+```{r}
+state_3years %>% select(net_pension_assets, net_pension_liability, state.abb) %>% 
+  mutate(net_pension_liability = net_pension_liability + 1, 
+         net_pension_assets = net_pension_assets + 1) %>% 
+  mutate(np_asset_lia_ratio = net_pension_assets/net_pension_liability) %>% 
+  arrange(desc(np_asset_lia_ratio)) %>% 
+
+  ggplot(aes(state.abb, np_asset_lia_ratio, group = state.abb)) +
+  geom_point() 
+  coord_flip()
+
+
+```
+

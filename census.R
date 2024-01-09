@@ -60,13 +60,32 @@ census_all <- rio::import(here::here("data/census", "sub-est2022.csv")) %>%
   )) 
 ###### Census state
 
+state_urb <- rio::import(here::here("data/census", "State_Urban_Rural_Pop_2020_2010.xlsx")) %>% 
+  clean_names() %>% 
+  rename(state.abb = state_abbrev) %>% 
+  select(state.abb, x2020_urban_pop, x2020_pct_urban_pop)
+
 census_state <- census_all %>% filter(sumlev == 40) %>% 
-  select(state.abb, geo_id, population)
+  select(state.abb, geo_id, population) %>% 
+  left_join(state_urb)
 
 ######## Census county#########
+# Getting urbanicity data 
 
+#CT has 9 planning region which are not counties
+county_CT_urb <- rio::import(here::here("data/census", "2020_UA_COUNTY.xlsx"), sheet = 2) %>% 
+  clean_names() %>% 
+  mutate(geo_id = paste0(state,county)) %>% 
+  select(geo_id, pop_urb, poppct_urb)
+
+county_urb <- rio::import(here::here("data/census", "2020_UA_COUNTY.xlsx")) %>% 
+  clean_names() %>% 
+  mutate(geo_id = paste0(state,county)) %>% 
+  select(geo_id, pop_urb, poppct_urb) %>% rbind(county_CT_urb)
+
+# join with urb data
 census_county <- census_all %>% 
-  filter(sumlev == 050) 
+  filter(sumlev == 050) %>% left_join(county_urb)
 
 # Check special cases in Census county: 
 # 41 cities & district of columbia categorized as county
@@ -78,12 +97,12 @@ census_county %>%
 # Connecticut has 9 entities "Planning Region"
 
 ###### Top 100 county Census 2021: 
-census_county_top100 <- census_all %>% 
-  filter(sumlev == 050) %>% arrange(desc(population)) %>% 
+census_county_top100 <- census_county %>% 
+  arrange(desc(population)) %>% 
   filter(funcstat %in% c("A", "C")) %>% 
   filter(!name_census %in% c("kings county", "queens county", "new york county", "bronx county")) %>% 
-  slice(1:100) %>% 
-  select(state.abb, name_census, population, funcstat, geo_id) 
+  slice(1:100) #%>% 
+  #select(state.abb, name_census, population, funcstat, geo_id) 
 
 census_county_top100 %>% write_csv("output/census_county_top100.csv")
 
@@ -105,7 +124,7 @@ census_city_top100 <- census_city %>%
          name_census = str_trim(name_census)) %>% 
   select(state.abb, name_census, population, geo_id)
 
-##### Middle file - Use a file to get geo_id into acfrs_general_purpose
+##### Middle file - Use this file to bridge geo_id from census data to into acfrs_general_purpose
 
 # sheet 3 includes all geo_id in sheet 1. 
 sheet3 <- rio::import(here::here("data", "City and Town Mapping.xlsx"), sheet = 3) %>%
@@ -134,6 +153,4 @@ sheet2 <- rio::import(here::here("data", "City and Town Mapping.xlsx"), sheet = 
          #name = str_remove_all(name, "(city)|(town)$"))
 
 governmentID_geoID <- rbind(sheet2, sheet3) %>% rename(name_midfile = name)
-
-governmentID_geoID %>% filter(str_detect(geo_id, "3663011$"))
 
