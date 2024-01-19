@@ -1,4 +1,4 @@
-sumlev,state,county,place,cousub,concit,funcstat,name_census,state.name,population,state.abb,geo_id,pop_urb,poppct_urb
+sumlev,state,county,place,cousub,concit,funcstat,name_census,state.name,population,state.abb,geo_id,urban_pop,pct_urban_pop
 50,06,037,NA,00000,0,A,los angeles county,California,10014042,CA,06037,9924789,0.991090481344684
 50,17,031,NA,00000,0,A,cook county,Illinois,5275522,IL,17031,5272651,0.999452188884514
 50,48,201,NA,00000,0,A,harris county,Texas,4731129,TX,48201,4677507,0.988662786703853

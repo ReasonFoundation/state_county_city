@@ -58,7 +58,7 @@ state_gov_2022 <- acfrs_state_2022 %>% select(-geo_id) %>%
   left_join(census_state, by = c("state.abb")) %>% select(-government_id)
 
 
-state_gov_2022 %>% write.csv("output/state_gov_22.csv")
+#state_gov_2022 %>% write.csv("output/state_gov_22.csv")
 
 
 #######County

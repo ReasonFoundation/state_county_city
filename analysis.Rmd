@@ -25,6 +25,131 @@ library(plotly)
 
 # States
 
+## State Urbanicity Model 
+
+```{r}
+mod_data_state <- state_3years %>% 
+  rename(urban_pop = x2020_urban_pop,
+         urban_pop_pct = x2020_pct_urban_pop) %>% 
+  mutate(net_pension_liability = net_pension_liability+1,
+         urban_pop = urban_pop+1) 
+
+mod_data_state %>% 
+  ggplot(aes(urban_pop, net_pension_liability))+
+  geom_point(color = "orange", alpha = 0.3) +
+  #scale_x_log10() +
+  #scale_y_log10()+
+  theme_minimal() +
+  labs(title = "Urbanicity & Net Pension Liability: Raw scale")
+```
+
+```{r}
+
+mod_data_state %>% 
+  ggplot(aes(urban_pop, net_pension_liability))+
+  geom_point(color = "orange", alpha = 0.3) +
+  scale_x_log10() +
+  scale_y_log10()+
+  theme_minimal() +
+  labs(title = "Urbanicity & Net Pension Liability: Log scales",
+       x = "Urban population",
+       y = "Net Pension Liability",
+       caption = "Log scales interpretation: For every 1% increase in urban population, there's a 1.27% increase in net pension liability ")
+  
+```
+
+```{r}
+mod_state <- lm(log(net_pension_liability) ~ log(urban_pop), data = mod_data_state)
+summary(mod_state)
+```
+
+## State governments: Net Pension Liabilities
+```{r fig.width=15, fig.width=15}
+state_3years %>% #filter(state.abb == "MI")
+  mutate(year = as.factor(year)) %>% 
+  ggplot(aes(name, net_pension_liability), group = year) +
+  geom_col(aes(fill = year), position = "dodge") +
+  # scale_color_viridis(discrete=TRUE) +
+  scale_y_continuous(breaks = c(50000000000, 100000000000, 150000000000),
+                   label = c("$50B", "$100B","$150B")) +
+  
+    scale_fill_manual(values = c("grey","black","orange")) +
+  
+  labs(title = "Net Pension Liabilities of State Governments in 3 years: 2020, 2021, 2022",
+       x = "",
+       y = "Net Pension Liabilities", 
+       caption = "Four states have not released 2022 ACFRs: AZ, CA, NV, OK") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 60)) 
+# 4 are behind:       AZ" "CA" "NV" "OK""
+```
+
+## State governments: Net Pension Liabilities Per Person
+```{r fig.width=15, fig.width=15}
+avg_npl_person <- state_3years %>% select(year, avg_npl_person) %>% distinct()
+
+state_3years %>% 
+  mutate(year = as.factor(year)) %>% 
+  ggplot(aes(name, npl_person), group = year) +
+  geom_col(aes(fill = year), position = "dodge") +
+  
+  geom_hline(yintercept = 2002, color="grey") +
+  geom_hline(yintercept = 2206, color="black") +
+  geom_hline(yintercept = 1356, color="orange") +
+  annotate("text", label = "Average NPL\nper person", x = 49, y = 2700) +
+  
+    scale_fill_manual(values = c("grey","black","orange")) +
+  
+  labs(title = "Net Pension Liabilities Per Person of State Governments in 3 years: 2020, 2021, 2022",
+       x = "",
+       y = "Net Pension Liabilities Per Person", 
+       caption = "Four states have not released 2022 ACFRs: AZ, CA, NV, OK") +
+
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 60)) 
+```
+
+
+```{r fig.width=15, fig.width=15, include=FALSE}
+## State governments: Total Liabilities
+state_3years %>% #filter(state.abb == "CA")
+  mutate(year = as.factor(year)) %>% 
+  ggplot(aes(name, total_liabilities), group = year) +
+  geom_col(aes(fill = year), position = "dodge") +
+  # scale_color_viridis(discrete=TRUE) +
+  scale_y_continuous(breaks = c(100000000000, 200000000000,300000000000, 400000000000, 500000000000),
+                   label = c("$100B","$200B", "$300B", "$400B", "$500B")) +
+  
+    scale_fill_manual(values = c('#D9AF6B', '#AF6458', '#68855C')) +
+  
+  labs(title = "Total Liabilities of State Governments in 3 years: 2020, 2021, 2022",
+       x = "",
+       y = "Total Liabilities", 
+       caption = "Four states have not released 2022 ACFRs: AZ, CA, NV, OK\n Four states whose ACFRs are being processed: HI, IL, MT, NM") +
+
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90)) 
+```
+
+
+```{r fig.width=15, fig.width=15, , include=FALSE}
+## State governments: Revenues
+state_3years %>% #filter(state.abb == "CA")
+  mutate(year = as.factor(year)) %>% 
+  ggplot(aes(name, revenues), group = year) +
+  geom_col(aes(fill = year), position = "dodge") +
+  # scale_color_viridis(discrete=TRUE) +
+  scale_y_continuous(breaks = c(100000000000, 200000000000,300000000000, 400000000000, 500000000000),
+                   label = c("$100B","$200B", "$300B", "$400B", "$500B")) +
+  
+    scale_fill_manual(values = c('#526A83', '#625377', '#68855C')) +
+  labs(title = "Revenues of State Governments in 3 years: 2020, 2021, 2022",
+       x = "",
+       y = "Revenues", 
+       caption = "Four states have not released 2022 ACFRs: AZ, CA, NV, OK\n Four states whose ACFRs are being processed: HI, IL, MT, NM") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90)) 
+```
 
 ```{r}
 # Note: 
@@ -355,6 +480,74 @@ ggplotly(p_cashflow_21)
 
 
 # Counties
+
+## Viz Urbanicity County
+
+```{r}
+county_3years %>% 
+  ggplot(aes(pop_urb, net_pension_liability))+
+  geom_point(color = "cornflowerblue", alpha = 0.3) +
+  #scale_x_log10() +
+  #scale_y_log10()+
+  theme_minimal() +
+  labs(title = "County government: Urban population & Net Pension Liability/n Raw scale")
+```
+
+```{r}
+county_3years %>% 
+  ggplot(aes(pop_urb, net_pension_liability))+
+  geom_point(color = "cornflowerblue", alpha = 0.3) +
+  scale_x_log10() +
+  scale_y_log10()+
+  theme_minimal() +
+  labs(title = "County government: Urbanicity & Net Pension Liability: Log scales",
+       x = "Urban population",
+       y = "Net Pension Liability",
+       caption = "Log scales interpretation: For every 1% increase in urban population, there's a 0.42% increase in net pension liability")
+
+```
+
+```{r}
+mod_data_county <- county_3years %>% 
+  mutate(net_pension_liability = net_pension_liability+1,
+         pop_urb = pop_urb+1) %>% 
+  select(net_pension_liability, pop_urb) 
+
+mod_county <- lm(log(net_pension_liability) ~ log(pop_urb), data = mod_data_county)
+summary(mod_county)
+
+#Interpretation:
+#https://library.virginia.edu/data/articles/interpreting-log-transformations-in-a-linear-model
+
+```
+
+```{r, include=FALSE, eval=FALSE}
+plot(mod1, which = 3)
+# The trend line is even BUT the residual are clustered. ==> Violate the constant variance assumption --> the model is misspecified. 
+```
+
+## Viz Median income
+```{r inclue = FALSE, eval=FALSE}
+
+income_mod_data <- county_3years %>% left_join(income) %>% 
+ mutate(net_pension_liability = net_pension_liability +1)
+
+income_mod_data %>% 
+  ggplot(aes(Median_Household_Income_2021, net_pension_liability)) +
+  geom_point(color = "purple", alpha = .3) +
+  theme_minimal()+
+  scale_x_log10()+
+  scale_y_log10()+
+  labs(title = "County government: Median household income & Net pension liability",
+       caption = "Log scales interpretation: For every 1% increase in household median income,\nthere's a 6.3% increase in net pension liability")
+```
+
+```{r}
+income_mod_data
+income_mod_county <- lm(log(net_pension_liability) ~ log(Median_Household_Income_2021), data = income_mod_data)
+summary(income_mod_county)
+```
+
 ```{r}
 top10_county_pop_assets_20 <- read.csv("data/top_10_county_2020_assetsadded.csv") %>% 
   select(2, 5, 7:9, 12) %>% 
@@ -442,9 +635,104 @@ county_gov_20_21_pop %>%
        x = "", 
        y = "liability_per_capita")
 ```
+## Top 100 Counties: Net Pension Liabilities
+
+```{r fig.width=15, fig.width=15}
+county_top100_3years %>% #filter(name == "jacksonville")
+  mutate(year = as.factor(year)) %>% 
+  ggplot(aes(name, net_pension_liability), group = year) +
+  geom_col(aes(fill = year), position = "dodge") +
+  # scale_color_viridis(discrete=TRUE) +
+  scale_y_continuous(breaks = c(5000000000, 10000000000, 15000000000),
+                  label = c("$5B", "$10B","$15B")) +
+  
+    scale_fill_manual(values = c('#D9AF6B', '#AF6458', '#68855C')) +
+  
+  labs(title = "Net Pension Liabilities of The top 100 County Governments in 3 years: 2020, 2021, 2022",
+       x = "",
+       y = "Net Pension Liabilities", 
+       caption = "") +
+
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90)) 
+```
+
+## Top 100 Counties: Net Pension Liabilities Per Person
+
+```{r fig.width=15, fig.width=15}
+county_top100_3years %>% #filter(name == "jacksonville")
+  mutate(year = as.factor(year)) %>% #select(state.abb, name, net_pension_liability, population) %>% 
+  mutate(npl_person = net_pension_liability/population) %>% 
+  
+  ggplot(aes(name, npl_person), group = year) +
+  geom_col(aes(fill = year), position = "dodge") +
+  # scale_color_viridis(discrete=TRUE) +
+  scale_y_continuous(breaks = c(5000000000, 10000000000, 15000000000),
+                  label = c("$5B", "$10B","$15B")) +
+  
+    scale_fill_manual(values = c('#D9AF6B', '#AF6458', '#68855C')) +
+  
+  labs(title = "Net Pension Liabilities of The top 100 County Governments Per Person\nin 3 years: 2020, 2021, 2022",
+       x = "",
+       y = "Net Pension Liabilities", 
+       caption = "") +
+
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90)) 
+```
 
 # Cities
 
+## Top 100 Cities: Net Pension Liabilities
+
+```{r fig.width=15, fig.width=15}
+city_top100_3years %>% 
+  mutate(year = as.factor(year)) %>% 
+  ggplot(aes(name, net_pension_liability), group = year) +
+  geom_col(aes(fill = year), position = "dodge") +
+  # scale_color_viridis(discrete=TRUE) +
+  scale_y_continuous(breaks = c(5000000000, 10000000000, 15000000000),
+                  label = c("$5B", "$10B","$15B")) +
+  
+    scale_fill_manual(values = c('#526A83', '#625377', '#68855C')) +
+  
+  labs(title = "Net Pension Liabilities of The top 100 City Governments in 3 years: 2020, 2021, 2022",
+       x = "",
+       y = "Net Pension Liabilities", 
+       caption = "") +
+
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90)) 
+```
+
+## Top 100 Cities: Net Pension Liabilities Per Person 
+
+```{r fig.width=15, fig.width=15}
+## Top 100 Cities Per person in 3 years 
+city_top100_3years %>% #filter(name == "jacksonville")
+  mutate(year = as.factor(year)) %>% #select(state.abb, name, net_pension_liability, population) %>% 
+  mutate(npl_person = net_pension_liability/population) %>% 
+  ggplot(aes(name, npl_person), group = year) +
+  geom_col(aes(fill = year), position = "dodge") +
+  # scale_color_viridis(discrete=TRUE) +
+ # scale_y_continuous(breaks = c(5000000000, 10000000000, 15000000000),
+    #              label = c("$5B", "$10B","$15B")) +
+  
+    scale_fill_manual(values = c('#526A83', '#625377', '#68855C')) +
+  
+  labs(title = "Net Pension Liabilities of The top 100 City Governments Per Person\nin 3 years: 2020, 2021, 2022",
+       x = "",
+       y = "Net Pension Liabilities", 
+       caption = "") +
+
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90)) 
+```
+
+## Entities at risk
+1) Asset to liability ratio; 
+2) Unrestricted - currently do not collect this
+3) Current ratio: Current Assets / Current Liabilities --> Do not have current assets
 ```{r}
 city_20 <- read.csv("data/top10_city_2020_assetsadded.csv")
 ```

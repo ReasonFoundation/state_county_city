@@ -8,7 +8,12 @@
 #   162 = Incorporated place
 #   170 = Consolidated city
 #   172 = Consolidated city -- place within consolidated city
-  
+options(scipen = 999)
+library(tidyverse)
+library(dplyr)
+library(DT)
+library(viridis)
+library(janitor)
 
 df_state <- data.frame(state.abb, state.name) %>% 
   add_row(state.abb = "DC", state.name = "District of Columbia")
@@ -63,7 +68,9 @@ census_all <- rio::import(here::here("data/census", "sub-est2022.csv")) %>%
 state_urb <- rio::import(here::here("data/census", "State_Urban_Rural_Pop_2020_2010.xlsx")) %>% 
   clean_names() %>% 
   rename(state.abb = state_abbrev) %>% 
-  select(state.abb, x2020_urban_pop, x2020_pct_urban_pop)
+  rename(urban_pop = x2020_urban_pop,
+         pct_urban_pop = x2020_pct_urban_pop) %>% 
+  select(state.abb, urban_pop, pct_urban_pop)
 
 census_state <- census_all %>% filter(sumlev == 40) %>% 
   select(state.abb, geo_id, population) %>% 
@@ -81,7 +88,13 @@ county_CT_urb <- rio::import(here::here("data/census", "2020_UA_COUNTY.xlsx"), s
 county_urb <- rio::import(here::here("data/census", "2020_UA_COUNTY.xlsx")) %>% 
   clean_names() %>% 
   mutate(geo_id = paste0(state,county)) %>% 
-  select(geo_id, pop_urb, poppct_urb) %>% rbind(county_CT_urb)
+  select(geo_id, pop_urb, poppct_urb) %>% 
+  #bind with CT
+  rbind(county_CT_urb) %>% 
+  
+  # rename to be consistence with state gov
+  rename(urban_pop = pop_urb,
+         pct_urban_pop = poppct_urb)
 
 # join with urb data
 census_county <- census_all %>% 
@@ -100,11 +113,14 @@ census_county %>%
 census_county_top100 <- census_county %>% 
   arrange(desc(population)) %>% 
   filter(funcstat %in% c("A", "C")) %>% 
+  
+  # does not count 5 counties in NY
   filter(!name_census %in% c("kings county", "queens county", "new york county", "bronx county")) %>% 
+  
   slice(1:100) #%>% 
   #select(state.abb, name_census, population, funcstat, geo_id) 
 
-census_county_top100 %>% write_csv("output/census_county_top100.csv")
+#census_county_top100 %>% write_csv("output/census_county_top100.csv")
 
 ##### Incorporated Place & Minor Civil Division:
 census_place_division <- census_all %>% 
@@ -152,5 +168,6 @@ sheet2 <- rio::import(here::here("data", "City and Town Mapping.xlsx"), sheet = 
   mutate(name = str_to_lower(name))
          #name = str_remove_all(name, "(city)|(town)$"))
 
+# dictionary linking governmentID and geo ID of cities 
 governmentID_geoID <- rbind(sheet2, sheet3) %>% rename(name_midfile = name)
 
